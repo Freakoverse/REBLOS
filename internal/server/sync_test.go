@@ -75,6 +75,60 @@ func TestPosterSetBuildMirrorsMemberTree(t *testing.T) {
 	}
 }
 
+func TestStoreEvent_RoutesByKind(t *testing.T) {
+	srv := testServer(t, &fakeStorage{stored: map[string][]byte{}})
+	ctx := context.Background()
+	sk := nostr.GeneratePrivateKey()
+
+	// Addressable message (36943) -> ReplaceEvent.
+	msg := &nostr.Event{Kind: kindMessage, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"d", "m1"}, {"h", "hub"}}, Content: "hi"}
+	if err := msg.Sign(sk); err != nil {
+		t.Fatal(err)
+	}
+	if !srv.storeEvent(ctx, msg) {
+		t.Fatal("addressable message was not stored")
+	}
+
+	// Regular reaction (7) -> SaveEvent.
+	react := &nostr.Event{Kind: kindReaction, CreatedAt: nostr.Now(), Tags: nostr.Tags{{"h", "hub"}}, Content: "+"}
+	if err := react.Sign(sk); err != nil {
+		t.Fatal(err)
+	}
+	if !srv.storeEvent(ctx, react) {
+		t.Fatal("regular reaction was not stored")
+	}
+	// A duplicate regular event is not newly stored.
+	if srv.storeEvent(ctx, react) {
+		t.Error("duplicate reaction should not count as newly stored")
+	}
+
+	// Both are queryable from the store.
+	ch, err := srv.store.QueryEvents(ctx, nostr.Filter{Kinds: []int{kindMessage, kindReaction}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for range ch {
+		n++
+	}
+	if n != 2 {
+		t.Fatalf("expected 2 stored events, got %d", n)
+	}
+}
+
+func TestMergeRelays(t *testing.T) {
+	got := mergeRelays([]string{"wss://a", "wss://b"}, []string{"wss://b", "wss://c", ""})
+	want := []string{"wss://a", "wss://b", "wss://c"}
+	if len(got) != len(want) {
+		t.Fatalf("mergeRelays = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("mergeRelays = %v, want %v", got, want)
+		}
+	}
+}
+
 func TestRelayHintsOf(t *testing.T) {
 	ev := &nostr.Event{Tags: nostr.Tags{
 		{"r", "wss://a.example", "general"},

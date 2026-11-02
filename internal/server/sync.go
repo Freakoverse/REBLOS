@@ -46,37 +46,105 @@ func (s *Server) refreshAllHubs(ctx context.Context) {
 	}
 }
 
-// refreshHub pulls a single hub's latest 36942 from its relay hints and reconciles
-// it. Relay hints come from the admin-supplied naddr, falling back to the `r` tags
-// of whatever 36942 is already stored. A newer revision than what we hold is stored
-// and reconciled (which rebuilds the poster set and mirrors the member tree).
+// refreshHub pulls a single hub's latest 36942 and its member-authored content
+// from the hub's relay hints. Relay hints come from the admin-supplied naddr plus
+// the `r` tags of the stored / fetched 36942. A newer hub revision is stored and
+// reconciled (rebuilding the poster set and mirroring the member tree); then the
+// hub's content events are pulled and member-gated into the store.
 func (s *Server) refreshHub(ctx context.Context, h *hub.Hub) {
-	relays := h.Relays
 	stored := s.latestHubEvent(ctx, h.Pubkey, h.DTag)
-	if len(relays) == 0 && stored != nil {
-		relays = relayHintsOf(stored)
+	relays := h.Relays
+	if stored != nil {
+		relays = mergeRelays(relays, relayHintsOf(stored))
 	}
 	if len(relays) == 0 {
 		return // nothing to pull from
 	}
 
-	ev := s.fetchHubEventFromRelays(ctx, relays, h.Pubkey, h.DTag)
-	if ev == nil {
-		return
+	// 1. Pull a newer hub event, if any, and reconcile it.
+	if ev := s.fetchHubEventFromRelays(ctx, relays, h.Pubkey, h.DTag); ev != nil {
+		if stored == nil || ev.CreatedAt > stored.CreatedAt {
+			if reject, _ := s.rejectEvent(ctx, ev); !reject {
+				if err := s.store.ReplaceEvent(ctx, ev); err != nil {
+					slog.Warn("hub refresh store failed", "coord", h.Coordinate(), "err", err)
+				} else {
+					slog.Info("hub refreshed from relays", "coord", h.Coordinate(), "created_at", int64(ev.CreatedAt))
+					s.reconcileHubEvent(ctx, ev)
+					relays = mergeRelays(relays, relayHintsOf(ev))
+				}
+			}
+		}
 	}
-	// Skip when it is not newer than what we already have.
-	if stored != nil && ev.CreatedAt <= stored.CreatedAt {
-		return
+
+	// 2. Pull the hub's content events (member-gated on store).
+	s.syncHubContent(ctx, relays, h)
+}
+
+// syncHubContent fetches the hub's member-authored events from its relays and
+// stores those that pass the write policy (member-gated), so the node catches up
+// on anything published while it was down or unreachable. One-shot per relay set.
+func (s *Server) syncHubContent(ctx context.Context, relays []string, h *hub.Hub) {
+	pool := nostr.NewSimplePool(ctx)
+	filters := []nostr.Filter{
+		// Messages, reactions, polls, pins, voice, hide, typing — all tagged #h.
+		{Kinds: hubContentKinds, Tags: nostr.TagMap{"h": []string{h.DTag}}},
+		// Reports reference the hub by its #a coordinate instead of #h.
+		{Kinds: []int{kindReport}, Tags: nostr.TagMap{"a": []string{h.Coordinate()}}},
+		// Join requests reference the hub by d + p (the creator).
+		{Kinds: []int{kindJoinRequest}, Tags: nostr.TagMap{"d": []string{h.DTag}, "p": []string{h.Pubkey}}},
 	}
-	if reject, _ := s.rejectEvent(ctx, ev); reject {
-		return
+	stored := 0
+	for _, f := range filters {
+		fctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		for re := range pool.FetchMany(fctx, relays, f) {
+			ev := re.Event
+			if ev == nil {
+				continue
+			}
+			if ok, err := ev.CheckSignature(); err != nil || !ok {
+				continue
+			}
+			if reject, _ := s.rejectEvent(ctx, ev); reject {
+				continue
+			}
+			if s.storeEvent(ctx, ev) {
+				stored++
+			}
+		}
+		cancel()
 	}
-	if err := s.store.ReplaceEvent(ctx, ev); err != nil {
-		slog.Warn("hub refresh store failed", "coord", h.Coordinate(), "err", err)
-		return
+	if stored > 0 {
+		slog.Info("hub content synced", "coord", h.Coordinate(), "stored", stored)
 	}
-	slog.Info("hub refreshed from relays", "coord", h.Coordinate(), "created_at", int64(ev.CreatedAt))
-	s.reconcileHubEvent(ctx, ev)
+}
+
+// storeEvent persists an event, routing replaceable/addressable kinds to
+// ReplaceEvent (keep newest per coordinate) and regular kinds to SaveEvent.
+// Returns whether it was newly stored (a duplicate SaveEvent is not an error we
+// surface, just not counted).
+func (s *Server) storeEvent(ctx context.Context, ev *nostr.Event) bool {
+	var err error
+	if nostr.IsReplaceableKind(ev.Kind) || nostr.IsAddressableKind(ev.Kind) {
+		err = s.store.ReplaceEvent(ctx, ev)
+	} else {
+		err = s.store.SaveEvent(ctx, ev)
+	}
+	return err == nil
+}
+
+// mergeRelays returns the union of two relay-URL lists, order-preserving, deduped.
+func mergeRelays(a, b []string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, list := range [][]string{a, b} {
+		for _, u := range list {
+			if u != "" && !seen[u] {
+				seen[u] = true
+				out = append(out, u)
+			}
+		}
+	}
+	return out
 }
 
 // fetchHubEventFromRelays fetches the newest valid 36942 for a hub coordinate from

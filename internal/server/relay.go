@@ -30,15 +30,20 @@ const (
 	kindReaction        = 7
 )
 
-// hubContentKind reports whether k is a per-hub participant event gated by
-// membership: the author must be in the target hub's poster set. These associate
-// with their hub via an `h` tag (dTag) or an `a` tag (a 36942 coordinate).
+// hubContentKinds are the per-hub participant event kinds gated by membership: the
+// author must be in the target hub's poster set. They associate with their hub via
+// an `h` tag (dTag) or an `a` tag (a 36942 coordinate).
+var hubContentKinds = []int{
+	kindMessage, kindMessageEditHint, kindTypingIndicator, kindPinList,
+	kindVoiceHost, kindVoicePresence, kindReport, kindHideMessage,
+	kindPoll, kindPollVote, kindReaction,
+}
+
 func hubContentKind(k int) bool {
-	switch k {
-	case kindMessage, kindMessageEditHint, kindTypingIndicator, kindPinList,
-		kindVoiceHost, kindVoicePresence, kindReport, kindHideMessage,
-		kindPoll, kindPollVote, kindReaction:
-		return true
+	for _, x := range hubContentKinds {
+		if x == k {
+			return true
+		}
 	}
 	return false
 }
