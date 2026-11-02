@@ -72,6 +72,23 @@ func (s *Server) mirrorHubBlob(ctx context.Context, sha256hex string, b []byte) 
 	slog.Info("mirrored hub blob", "hash", sha256hex, "bytes", len(b))
 }
 
+// mayUpload reports whether a pubkey may store blobs on this node. REBLOS is a
+// closed Blossom server: an uploader must be the admin, on the trusted-key
+// whitelist, a whitelisted hub's creator (which bootstraps the very first member-
+// tree upload, before any poster set exists), or a current member of some
+// whitelisted hub. The acceptAllKinds fork switch opens uploads too.
+func (s *Server) mayUpload(pubkey string) bool {
+	if s.acceptAllKinds || pubkey == s.adminPubkey || s.white.has(pubkey) {
+		return true
+	}
+	for _, h := range s.hubs.List() {
+		if h.Pubkey == pubkey || s.posters.Has(h.Coordinate(), pubkey) {
+			return true
+		}
+	}
+	return false
+}
+
 // relayHintsOf returns the general relay URLs advertised in a hub event's `r` tags.
 func relayHintsOf(ev *nostr.Event) []string {
 	var out []string

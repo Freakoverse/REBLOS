@@ -319,6 +319,10 @@ func (s *Server) handleUploadHead(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, http.StatusForbidden, "blocked")
 		return
 	}
+	if !s.mayUpload(evt.PubKey) {
+		httpErr(w, http.StatusForbidden, "uploads are restricted to members of this relay's hubs")
+		return
+	}
 	if s.blacklist.has(hash) {
 		httpErr(w, http.StatusForbidden, "this file is not permitted on this server")
 		return
@@ -355,6 +359,10 @@ func (s *Server) handleUploadPut(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.blocked(evt.PubKey) {
 		httpErr(w, http.StatusForbidden, "blocked")
+		return
+	}
+	if !s.mayUpload(evt.PubKey) {
+		httpErr(w, http.StatusForbidden, "uploads are restricted to members of this relay's hubs")
 		return
 	}
 	if s.blacklist.has(claimed) {

@@ -167,6 +167,7 @@ func TestUpload_HappyPath(t *testing.T) {
 	fs := &fakeStorage{stored: map[string][]byte{}}
 	srv := testServer(t, fs)
 	srv.allowedUploadTypes = []string{"*"} // this test exercises the mechanics, not the type gate
+	srv.acceptAllKinds = true              // open uploads (member gate has its own test)
 
 	zipBytes := makeZip(t)
 	sum := hex.EncodeToString(sha256Sum(zipBytes))
@@ -195,6 +196,7 @@ func TestUpload_NoAuth(t *testing.T) {
 
 func TestUpload_HashMismatch(t *testing.T) {
 	srv := testServer(t, &fakeStorage{stored: map[string][]byte{}})
+	srv.acceptAllKinds = true
 	zipBytes := makeZip(t)
 	sk := nostr.GeneratePrivateKey()
 	wrong := hex.EncodeToString(sha256Sum([]byte("different")))
@@ -205,6 +207,7 @@ func TestUpload_HashMismatch(t *testing.T) {
 
 func TestUpload_DisallowedType(t *testing.T) {
 	srv := testServer(t, &fakeStorage{stored: map[string][]byte{}})
+	srv.acceptAllKinds = true                // open uploads; this test is about the type gate
 	srv.allowedUploadTypes = []string{"png"} // images only
 	// Opaque binary (NUL bytes, no magic) classifies as "bin" and is rejected.
 	body := []byte{0x00, 0x01, 0x02, 0x00, 0xff, 0x00}
@@ -218,6 +221,7 @@ func TestUpload_DisallowedType(t *testing.T) {
 func TestUpload_TextBlobAccepted(t *testing.T) {
 	fs := &fakeStorage{stored: map[string][]byte{}}
 	srv := testServer(t, fs) // default allowlist includes txt
+	srv.acceptAllKinds = true
 	body := []byte("tree:" + hex.EncodeToString(sha256Sum([]byte("x"))))
 	sum := hex.EncodeToString(sha256Sum(body))
 	sk := nostr.GeneratePrivateKey()
@@ -226,6 +230,38 @@ func TestUpload_TextBlobAccepted(t *testing.T) {
 	}
 	if got := fs.stored[sum+".txt"]; !bytes.Equal(got, body) {
 		t.Fatal("text blob not stored under .txt")
+	}
+}
+
+func TestUpload_MemberGate(t *testing.T) {
+	fs := &fakeStorage{stored: map[string][]byte{}}
+	srv := testServer(t, fs)
+
+	owner := key(t)
+	member := key(t)
+	stranger := key(t)
+	seedHub(t, srv, fs, owner, "h", owner, member)
+
+	if !srv.mayUpload(owner) {
+		t.Error("hub creator should be allowed to upload")
+	}
+	if !srv.mayUpload(member) {
+		t.Error("a hub member should be allowed to upload")
+	}
+	if srv.mayUpload(stranger) {
+		t.Error("a non-member must not be allowed to upload")
+	}
+	_ = srv.white.add(stranger, "trusted")
+	if !srv.mayUpload(stranger) {
+		t.Error("a trusted-whitelisted key should be allowed to upload")
+	}
+
+	// A non-member PUT is rejected with 403, before any streaming.
+	clean := testServer(t, &fakeStorage{stored: map[string][]byte{}})
+	body := []byte("tree:x")
+	sum := hex.EncodeToString(sha256Sum(body))
+	if w := put(t, clean, body, authHeader(t, nostr.GeneratePrivateKey(), sum)); w.Code != http.StatusForbidden {
+		t.Fatalf("non-member upload: want 403, got %d: %s", w.Code, w.Body.String())
 	}
 }
 
