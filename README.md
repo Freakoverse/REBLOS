@@ -14,6 +14,21 @@ lands.
 
 Licensed **MIT** — anyone can run a node.
 
+## Quick install
+
+On a fresh Ubuntu/Debian server whose domain's DNS A record already points at it:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Freakoverse/REBLOS/main/deploy/install.sh | sudo bash
+```
+
+It asks for your domain, admin npub, relay key (generate or paste), and storage
+backend, then sets up the node behind Caddy (automatic HTTPS). Open
+`https://<your-domain>/dashboard`, sign in with your admin Nostr extension, and add
+your hub by its `naddr` on the **Hubs** tab. Re-running the command updates the node
+without touching your data; back up `/opt/reblos/deploy/data` and `.env`. See
+[docs/REBLOS-MIGRATION.md](docs/REBLOS-MIGRATION.md) §7 for details.
+
 ## Features
 
 - **Blossom blob server** — BUD-01/02/04/05/06 GET/HEAD/upload/delete, blobs

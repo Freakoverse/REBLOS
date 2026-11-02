@@ -1,5 +1,7 @@
 // Package identity manages the node's Nostr key. It is generated on first run and
-// persisted; the operator can read the printed nsec to publish their ad inventory.
+// persisted as hex in <dataDir>/identity.key. An operator can instead pre-seed
+// that file with their own key, as hex or as an `nsec1…` (the installer does this
+// when you choose to paste your own nsec).
 package identity
 
 import (
@@ -26,7 +28,17 @@ func Load(dataDir string) (*Identity, error) {
 
 	var sk string
 	if b, err := os.ReadFile(path); err == nil {
-		sk = strings.TrimSpace(string(b))
+		raw := strings.TrimSpace(string(b))
+		if strings.HasPrefix(raw, "nsec1") {
+			prefix, v, e := nip19.Decode(raw)
+			hexsk, ok := v.(string)
+			if e != nil || prefix != "nsec" || !ok {
+				return nil, fmt.Errorf("identity: %s holds an invalid nsec", path)
+			}
+			sk = hexsk
+		} else {
+			sk = raw
+		}
 	}
 
 	created := false
