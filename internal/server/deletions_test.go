@@ -9,11 +9,12 @@ import (
 
 func TestDeletions_RejectResurrectionButAllowNewer(t *testing.T) {
 	srv := testServer(t, &fakeStorage{stored: map[string][]byte{}})
+	srv.acceptAllKinds = true // isolate the deletion layer from the hub kind/member gate
 	pk, _ := nostr.GetPublicKey(nostr.GeneratePrivateKey())
 	ctx := context.Background()
 
 	modAt := func(ts nostr.Timestamp) *nostr.Event {
-		return &nostr.Event{Kind: currentModKind, PubKey: pk, CreatedAt: ts, Tags: nostr.Tags{{"d", "my-mod"}}}
+		return &nostr.Event{Kind: kindMessage, PubKey: pk, CreatedAt: ts, Tags: nostr.Tags{{"d", "my-mod"}}}
 	}
 
 	orig := modAt(1000)
@@ -43,11 +44,12 @@ func TestDeletions_RejectResurrectionButAllowNewer(t *testing.T) {
 
 func TestDeletions_RejectsForeignDeletion(t *testing.T) {
 	srv := testServer(t, &fakeStorage{stored: map[string][]byte{}})
+	srv.acceptAllKinds = true // isolate the deletion layer from the hub kind/member gate
 	author, _ := nostr.GetPublicKey(nostr.GeneratePrivateKey())
 	attacker, _ := nostr.GetPublicKey(nostr.GeneratePrivateKey())
 	ctx := context.Background()
 
-	mod := &nostr.Event{Kind: currentModKind, PubKey: author, CreatedAt: 1000, Tags: nostr.Tags{{"d", "my-mod"}}}
+	mod := &nostr.Event{Kind: kindMessage, PubKey: author, CreatedAt: 1000, Tags: nostr.Tags{{"d", "my-mod"}}}
 	del := &nostr.Event{Kind: 5, PubKey: attacker, CreatedAt: 2000, Tags: nostr.Tags{{"a", moderationKey(mod)}}}
 
 	if ok, _ := srv.onDeletionOutcome(ctx, mod, del); ok {

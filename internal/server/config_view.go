@@ -17,7 +17,7 @@ func (s *Server) handleAdminConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	kinds := make([]map[string]any, 0)
-	for _, k := range AcceptedModKinds() {
+	for _, k := range s.AcceptedKinds() {
 		kinds = append(kinds, map[string]any{"kind": k, "label": kindLabel(k)})
 	}
 	normalMB, whitelistMB := s.caps.snapshotMB()
@@ -27,7 +27,7 @@ func (s *Server) handleAdminConfig(w http.ResponseWriter, r *http.Request) {
 			"accept_all_kinds": s.acceptAllKinds,
 			"accepted_kinds":   kinds,
 			"min_event_pow":    s.minEventPoW,
-			"legacy_cutoff":    int64(legacyCutoff),
+			"hubs_whitelisted": len(s.hubs.List()),
 			"admin_configured": s.adminPubkey != "",
 		},
 		"download_gate": map[string]any{
@@ -51,18 +51,32 @@ func (s *Server) handleAdminConfig(w http.ResponseWriter, r *http.Request) {
 // kindLabel maps an accepted event kind to a human label (mirrors the dashboard).
 func kindLabel(k int) string {
 	switch k {
-	case currentModKind:
-		return "Mod"
-	case legacyModKind:
-		return "Legacy mod"
-	case jamKind:
-		return "Mod jam"
-	case jamBallotKind:
-		return "Jam ballot"
-	case jamResultKind:
-		return "Jam result"
-	case moderationTagKind:
-		return "Moderation tag"
+	case kindHubEvent:
+		return "Hub"
+	case kindMessage:
+		return "Message"
+	case kindMessageEditHint:
+		return "Message edit hint"
+	case kindTypingIndicator:
+		return "Typing indicator"
+	case kindJoinRequest:
+		return "Join request"
+	case kindPinList:
+		return "Pin list"
+	case kindVoiceHost:
+		return "Voice host"
+	case kindVoicePresence:
+		return "Voice presence"
+	case kindReport:
+		return "Report"
+	case kindHideMessage:
+		return "Hide message"
+	case kindPoll:
+		return "Poll"
+	case kindPollVote:
+		return "Poll vote"
+	case kindReaction:
+		return "Reaction"
 	default:
 		return fmt.Sprintf("kind %d", k)
 	}

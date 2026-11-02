@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"time"
 
 	"github.com/Freakoverse/REBLOS/internal/hub"
 	"github.com/fiatjaf/eventstore/badger"
@@ -12,50 +11,73 @@ import (
 	"github.com/nbd-wtf/go-nostr/nip86"
 )
 
+// NIP-CHAT event kinds (client lib/crypto/constants.ts). rejectEvent gates each
+// class; groups (36950) use a different membership model and are out of scope for
+// hub gating.
 const (
-	currentModKind    = 31142 // the permanent, current mod kind
-	legacyModKind     = 30402 // LEGACY: old mods (temporary exception, see below)
-	jamKind           = 31143 // mod jam
-	jamBallotKind     = 31243 // mod jam ballot (a vote)
-	jamResultKind     = 31343 // mod jam results (paged leaderboard)
-	moderationTagKind = 30985 // admin tag overlay applied to someone else's post
+	kindHubEvent        = 36942 // hub definition (addressable; whitelisted-coordinate gated)
+	kindMessage         = 36943
+	kindMessageEditHint = 26943
+	kindTypingIndicator = 26950
+	kindJoinRequest     = 36944 // prospective member -> gated by target hub, NOT poster set
+	kindPinList         = 36945
+	kindVoiceHost       = 36946
+	kindVoicePresence   = 36947
+	kindReport          = 36948
+	kindHideMessage     = 36949
+	kindPoll            = 1067
+	kindPollVote        = 1017
+	kindReaction        = 7
 )
 
-// LEGACY: legacy mods (kind 30402) are accepted only with a "GameMod" t-tag and a
-// created_at before this cutoff, and are PoW-exempt. Mirrors the client's
-// isLegacyModEvent(). Expected to be removed in a future version.
-var legacyCutoff = time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC).Unix()
+// hubContentKind reports whether k is a per-hub participant event gated by
+// membership: the author must be in the target hub's poster set. These associate
+// with their hub via an `h` tag (dTag) or an `a` tag (a 36942 coordinate).
+func hubContentKind(k int) bool {
+	switch k {
+	case kindMessage, kindMessageEditHint, kindTypingIndicator, kindPinList,
+		kindVoiceHost, kindVoicePresence, kindReport, kindHideMessage,
+		kindPoll, kindPollVote, kindReaction:
+		return true
+	}
+	return false
+}
 
-func hasTagValue(evt *nostr.Event, name, val string) bool {
-	for _, t := range evt.Tags {
-		if len(t) >= 2 && t[0] == name && t[1] == val {
+// nipChatCoreKind is a built-in accepted kind (hub event, member-content, or a
+// join request), before per-event gating.
+func nipChatCoreKind(k int) bool {
+	return k == kindHubEvent || k == kindJoinRequest || hubContentKind(k)
+}
+
+// acceptsKind reports whether the relay stores/serves this kind at all: the
+// built-in NIP-CHAT kinds plus any configured extra kinds.
+func (s *Server) acceptsKind(k int) bool {
+	if nipChatCoreKind(k) {
+		return true
+	}
+	for _, e := range s.extraKinds {
+		if e == k {
 			return true
 		}
 	}
 	return false
 }
 
-func isLegacyMod(evt *nostr.Event) bool {
-	return evt.Kind == legacyModKind &&
-		int64(evt.CreatedAt) < legacyCutoff &&
-		hasTagValue(evt, "t", "GameMod")
+// AcceptedKinds lists the kinds this relay serves, for the discovery announcement.
+func (s *Server) AcceptedKinds() []int {
+	ks := []int{
+		kindHubEvent, kindJoinRequest, kindMessage, kindMessageEditHint,
+		kindTypingIndicator, kindPinList, kindVoiceHost, kindVoicePresence,
+		kindReport, kindHideMessage, kindPoll, kindPollVote, kindReaction,
+	}
+	return append(ks, s.extraKinds...)
 }
 
-func isJamKind(k int) bool { return k == jamKind || k == jamBallotKind || k == jamResultKind }
-
-func acceptedKind(k int) bool {
-	return k == currentModKind || k == legacyModKind || isJamKind(k) || k == moderationTagKind
-}
-
-// AcceptedModKinds are the relay event kinds this node stores/serves (for the
-// discovery announcement): mods (current + legacy), the mod-jam family, and the
-// admin's moderation tag overlays.
-func AcceptedModKinds() []int {
-	return []int{currentModKind, legacyModKind, jamKind, jamBallotKind, jamResultKind, moderationTagKind}
-}
-
-// rejectEvent enforces the write policy: mods (+ legacy), the mod-jam family,
-// and admin-only moderation tags.
+// rejectEvent enforces the NIP-CHAT write policy. A hub event is accepted only for
+// a whitelisted coordinate; a member-content event only when its author is in the
+// target hub's poster set; a join request only when it targets a whitelisted hub
+// (prospective members are not yet members). Configured extra kinds pass the kind
+// allowlist and the PoW floor without member gating.
 func (s *Server) rejectEvent(ctx context.Context, evt *nostr.Event) (bool, string) {
 	if s.blocked(evt.PubKey) {
 		return true, "blocked: pubkey is banned"
@@ -69,79 +91,131 @@ func (s *Server) rejectEvent(ctx context.Context, evt *nostr.Event) (bool, strin
 	if dt := s.deletions.deletedAt(moderationKey(evt)); dt > 0 && int64(evt.CreatedAt) <= dt {
 		return true, "blocked: this event was deleted by its author"
 	}
-	// Fork switch: no kind allowlist at all. Everything above still applies
-	// (bans, takedowns, honored deletions) and PoW becomes the only spam floor,
-	// so a general-purpose fork should set min_event_pow rather than rely on the
-	// scope. Deletions stay exempt — a takedown must never need mining.
-	if s.acceptAllKinds {
-		if s.minEventPoW > 0 && evt.Kind != 5 && nip13.Difficulty(evt.ID) < s.minEventPoW {
-			return true, "pow: insufficient proof-of-work"
-		}
+	// NIP-09 deletion request. khatru applies its effect before this policy runs
+	// (see onDeletionOutcome); accept it so the author gets an OK and the deletion
+	// is retained (briefly — pruned by RunDeletionSweep). Always exempt from the
+	// kind allowlist and PoW: a takedown must never need mining.
+	if evt.Kind == 5 {
 		return false, ""
 	}
-	switch evt.Kind {
-	case 5:
-		// NIP-09 deletion request. khatru applies its effect before this policy
-		// runs (see onDeletionOutcome); accept it so the author gets an OK and the
-		// deletion is retained (briefly — pruned by RunDeletionSweep).
-		return false, ""
-	case currentModKind:
-		if tagValue(evt, "d") == "" {
-			return true, "invalid: mod event is missing its d tag"
+	// Fork switch: no kind allowlist and no member gate. Everything above still
+	// applies; PoW becomes the only spam floor, so set min_event_pow with this.
+	if s.acceptAllKinds {
+		return s.powOK(evt)
+	}
+
+	switch {
+	case evt.Kind == kindHubEvent:
+		dTag := tagValue(evt, "d")
+		if dTag == "" {
+			return true, "invalid: hub event is missing its d tag"
 		}
-		if s.minEventPoW > 0 && nip13.Difficulty(evt.ID) < s.minEventPoW {
-			return true, "pow: insufficient proof-of-work"
+		if !s.hubs.Has(hubCoordinate(evt.PubKey, dTag)) {
+			return true, "blocked: this hub is not whitelisted on this relay"
 		}
-		return false, ""
-	case jamKind, jamBallotKind, jamResultKind:
-		// Mod-jam family: all addressable, so a d tag is required; PoW-gated like mods.
-		if tagValue(evt, "d") == "" {
-			return true, "invalid: jam event is missing its d tag"
+		return s.powOK(evt)
+	case evt.Kind == kindJoinRequest:
+		if coord := joinRequestCoordinate(evt); coord == "" || !s.hubs.Has(coord) {
+			return true, "blocked: join request does not target a whitelisted hub"
 		}
-		if s.minEventPoW > 0 && nip13.Difficulty(evt.ID) < s.minEventPoW {
-			return true, "pow: insufficient proof-of-work"
+		return s.powOK(evt)
+	case hubContentKind(evt.Kind):
+		targets := s.eventHubTargets(evt)
+		if len(targets) == 0 {
+			return true, "blocked: event does not target a whitelisted hub"
 		}
-		return false, ""
-	case moderationTagKind:
-		// Tag overlays applied to other people's posts, so only the admin may
-		// write them — otherwise anyone could mark anyone's mod NSFW here.
-		if s.adminPubkey == "" {
-			return true, "blocked: moderation tags require a configured relay admin"
+		if !s.authorIsMember(targets, evt.PubKey) {
+			return true, "blocked: author is not a member of this hub"
 		}
-		if evt.PubKey != s.adminPubkey {
-			return true, "restricted: only the relay admin may publish moderation tags"
-		}
-		if tagValue(evt, "d") == "" {
-			return true, "invalid: moderation tag is missing its d tag"
-		}
-		// No PoW: it's already restricted to a single pubkey, so the spam floor
-		// PoW exists to raise buys nothing, and a moderator shouldn't have to mine
-		// to hide something.
-		return false, ""
-	case legacyModKind:
-		if !isLegacyMod(evt) { // LEGACY: PoW-exempt, but gated by tag + cutoff
-			return true, "legacy mods require a GameMod tag and must predate the cutoff"
-		}
-		return false, ""
+		return s.powOK(evt)
+	case s.isExtraKind(evt.Kind):
+		return s.powOK(evt)
 	default:
-		return true, "blocked: this relay only accepts mod, mod-jam, and moderation-tag events"
+		return true, "blocked: this relay only accepts this hub's NIP-CHAT events"
 	}
 }
 
-// rejectFilter keeps the relay scoped (mods, mod-jam family, moderation tags) for reads.
+// powOK applies the min-PoW spam floor (0 = off).
+func (s *Server) powOK(evt *nostr.Event) (bool, string) {
+	if s.minEventPoW > 0 && nip13.Difficulty(evt.ID) < s.minEventPoW {
+		return true, "pow: insufficient proof-of-work"
+	}
+	return false, ""
+}
+
+// eventHubTargets resolves the whitelisted hubs an event is scoped to, via an
+// `a` tag (an exact 36942 coordinate) or an `h` tag (a dTag, which may match more
+// than one whitelisted hub). Empty when it targets none.
+func (s *Server) eventHubTargets(evt *nostr.Event) []*hub.Hub {
+	var out []*hub.Hub
+	seen := map[string]bool{}
+	add := func(h *hub.Hub) {
+		if h != nil && !seen[h.Coordinate()] {
+			seen[h.Coordinate()] = true
+			out = append(out, h)
+		}
+	}
+	for _, t := range evt.Tags {
+		if len(t) < 2 {
+			continue
+		}
+		switch t[0] {
+		case "a":
+			add(s.hubs.Get(t[1])) // non-hub coordinates (e.g. reply refs) resolve to nil
+		case "h":
+			for _, h := range s.hubs.ByDTag(t[1]) {
+				add(h)
+			}
+		}
+	}
+	return out
+}
+
+// authorIsMember reports whether pubkey is in the poster set of any target hub.
+func (s *Server) authorIsMember(targets []*hub.Hub, pubkey string) bool {
+	for _, h := range targets {
+		if s.posters.Has(h.Coordinate(), pubkey) {
+			return true
+		}
+	}
+	return false
+}
+
+// joinRequestCoordinate derives the hub coordinate a join request targets from its
+// `p` (hub creator) and `d` (hub dTag) tags.
+func joinRequestCoordinate(evt *nostr.Event) string {
+	p, d := tagValue(evt, "p"), tagValue(evt, "d")
+	if p == "" || d == "" {
+		return ""
+	}
+	return hubCoordinate(p, d)
+}
+
+func (s *Server) isExtraKind(k int) bool {
+	for _, e := range s.extraKinds {
+		if e == k {
+			return true
+		}
+	}
+	return false
+}
+
+// rejectFilter keeps reads scoped to the kinds this relay serves. (Serve-side
+// member-author intersection is belt-and-suspenders over the store gate and is a
+// later addition; store gating already ensures only member events are stored.)
 func (s *Server) rejectFilter(ctx context.Context, filter nostr.Filter) (bool, string) {
 	if s.acceptAllKinds {
 		return false, "" // fork switch: serve whatever was stored
 	}
 	if len(filter.Kinds) == 0 {
-		return false, "" // querying everything → only mod events exist here
+		return false, "" // querying everything → only accepted kinds exist here
 	}
 	for _, k := range filter.Kinds {
-		if acceptedKind(k) {
-			return false, ""
+		if !s.acceptsKind(k) {
+			return true, "this relay only serves this hub's NIP-CHAT events"
 		}
 	}
-	return true, "this relay only serves mod, mod-jam, and moderation-tag events"
+	return false, ""
 }
 
 // setupRelay wires the event store, mod policies, and NIP-86 admin onto the relay.

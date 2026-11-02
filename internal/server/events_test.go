@@ -10,13 +10,13 @@ import (
 func TestMatchesSearch(t *testing.T) {
 	pk, _ := nostr.GetPublicKey(nostr.GeneratePrivateKey())
 	evt := &nostr.Event{
-		Kind:      currentModKind,
+		Kind:      kindMessage,
 		PubKey:    pk,
 		Content:   "A great Skyrim overhaul",
 		CreatedAt: nostr.Now(),
 		Tags:      nostr.Tags{{"d", "cool-mod-123"}, {"t", "skyrim"}, {"title", "Cool Mod"}},
 	}
-	naddr, _ := nip19.EncodeEntity(pk, currentModKind, "cool-mod-123", nil)
+	naddr, _ := nip19.EncodeEntity(pk, kindMessage, "cool-mod-123", nil)
 	npub, _ := nip19.EncodePublicKey(pk)
 
 	for _, tc := range []struct {

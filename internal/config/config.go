@@ -55,11 +55,17 @@ type Download struct {
 
 type Relay struct {
 	AdminNpub   string `yaml:"admin_npub"`    // npub allowed to use the NIP-86 management API
-	MinEventPoW int    `yaml:"min_event_pow"` // NIP-13 bits required on mod events (legacy 30402 exempt)
-	// AcceptAllKinds drops the mod-scoped kind allowlist: any kind, from anyone.
-	// For a fork that wants a general-purpose relay rather than a mod one. The
-	// remaining protections (banned pubkeys, event takedowns, honored deletions,
-	// and min_event_pow) still apply.
+	MinEventPoW int    `yaml:"min_event_pow"` // NIP-13 bits required on accepted events (0 = off)
+	// ExtraKinds are additional event kinds to accept beyond the built-in NIP-CHAT
+	// hub set (hub event, member-content kinds, join requests) — e.g. DM kinds or
+	// a custom kind. They are NOT member-gated; they pass the kind allowlist and
+	// the min_event_pow floor. Hub member/role gating applies only to the built-in
+	// hub-content kinds.
+	ExtraKinds []int `yaml:"extra_kinds"`
+	// AcceptAllKinds drops the kind allowlist AND the hub member gate: any kind,
+	// from anyone. For a general-purpose fork. The remaining protections (banned
+	// pubkeys, event takedowns, honored deletions, min_event_pow) still apply, so
+	// set min_event_pow when enabling this.
 	AcceptAllKinds bool `yaml:"accept_all_kinds"`
 }
 

@@ -7,20 +7,20 @@ import (
 	"github.com/nbd-wtf/go-nostr"
 )
 
-// RunIngest subscribes to the given relays for mod events (current 31142 + legacy
-// 30402 GameMod) and stores every one that is validly signed and passes this
-// relay's own policy. This turns the node into a comprehensive mirror/DB of all
-// mods on the network, so clients can query one place and reliably get everything.
-// It blocks until ctx is cancelled; the pool reconnects on drops.
+// RunIngest subscribes to the given relays for this relay's accepted NIP-CHAT
+// kinds and stores every event that is validly signed and passes the write policy
+// (so it is member-gated, exactly like a direct publish). It blocks until ctx is
+// cancelled; the pool reconnects on drops.
+//
+// INTERIM: this is a global mirror from a configured relay set. The planned sync
+// layer (REBLOS-MIGRATION §6) replaces it with a per-hub pull from each hub's own
+// relay hints, plus matching Blossom-blob mirroring.
 func (s *Server) RunIngest(ctx context.Context, relays []string) {
 	if len(relays) == 0 {
 		return
 	}
 	pool := nostr.NewSimplePool(ctx)
-	filters := nostr.Filters{
-		{Kinds: []int{currentModKind}},
-		{Kinds: []int{legacyModKind}, Tags: nostr.TagMap{"t": []string{"GameMod"}}},
-	}
+	filters := nostr.Filters{{Kinds: s.AcceptedKinds()}}
 	slog.Info("ingest started", "relays", len(relays))
 
 	// Back-fill all history first (relays cap a single subscription, so paginate

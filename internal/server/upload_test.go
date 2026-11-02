@@ -36,9 +36,31 @@ func (f *fakeStorage) Store(_ context.Context, sha, ext, _ string, r io.Reader, 
 	f.mu.Unlock()
 	return nil
 }
-func (f *fakeStorage) Load(context.Context, string, string) (io.ReadSeekCloser, error) {
-	return nil, storage.ErrNotFound
+func (f *fakeStorage) Load(_ context.Context, sha, ext string) (io.ReadSeekCloser, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := sha
+	if ext != "" {
+		key = sha + "." + ext
+	}
+	b, ok := f.stored[key]
+	if !ok { // resolve a bare-hash request against any stored extension
+		for k, v := range f.stored {
+			if k == sha || strings.HasPrefix(k, sha+".") {
+				b, ok = v, true
+				break
+			}
+		}
+	}
+	if !ok {
+		return nil, storage.ErrNotFound
+	}
+	return nopReadSeekCloser{bytes.NewReader(b)}, nil
 }
+
+type nopReadSeekCloser struct{ *bytes.Reader }
+
+func (nopReadSeekCloser) Close() error                              { return nil }
 func (f *fakeStorage) Delete(context.Context, string, string) error { return nil }
 func (f *fakeStorage) Has(_ context.Context, sha, _ string) (bool, error) {
 	f.mu.Lock()

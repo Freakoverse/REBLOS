@@ -71,7 +71,7 @@ func (s *Server) onDeletionOutcome(ctx context.Context, target, deletion *nostr.
 	if target.PubKey != deletion.PubKey {
 		return false, "you are not the author of this event"
 	}
-	if acceptedKind(target.Kind) {
+	if s.acceptsKind(target.Kind) {
 		_ = s.deletions.record(moderationKey(target), int64(deletion.CreatedAt))
 	}
 	return true, ""

@@ -47,8 +47,9 @@ type Server struct {
 	minUploadPoW       int
 	allowedUploadTypes []string // accepted extensions (magic-detected); "*" = any
 	minEventPoW        int
-	acceptAllKinds     bool // fork switch: no kind allowlist (see config.Relay)
-	maxConcurrent      int  // global simultaneous uploads (display-only mirror of the limiter's cap)
+	acceptAllKinds     bool  // fork switch: no kind allowlist + no member gate (see config.Relay)
+	extraKinds         []int // additional accepted kinds beyond the NIP-CHAT hub set
+	maxConcurrent      int   // global simultaneous uploads (display-only mirror of the limiter's cap)
 	limiter            *uploadLimiter
 	block              *blocklist
 	white              *whitelist
@@ -122,6 +123,7 @@ func New(cfg *config.Config, st storage.Storage, gateSecret string) (*Server, er
 		allowedUploadTypes: cfg.Upload.AllowedTypes,
 		minEventPoW:        cfg.Relay.MinEventPoW,
 		acceptAllKinds:     cfg.Relay.AcceptAllKinds,
+		extraKinds:         cfg.Relay.ExtraKinds,
 		maxConcurrent:      cfg.Upload.MaxConcurrent,
 		limiter:            newUploadLimiter(cfg.Upload.MaxConcurrent),
 		block:              loadBlocklist(filepath.Join(cfg.DataDir, "blocklist.json")),

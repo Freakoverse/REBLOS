@@ -17,7 +17,7 @@ func TestExtractHashesFromModEvent(t *testing.T) {
 	b := newBlobRefs("https://brs.degmods.com")
 
 	evt := &nostr.Event{
-		Kind:    currentModKind,
+		Kind:    kindMessage,
 		Content: "check the screenshot https://brs.degmods.com/" + refHashC + ".png here",
 		Tags: nostr.Tags{
 			{"d", "some-mod"},
@@ -48,7 +48,7 @@ func TestNoteAndRefsFor(t *testing.T) {
 	b := newBlobRefs("https://brs.degmods.com")
 
 	evt := &nostr.Event{
-		Kind: currentModKind,
+		Kind: kindMessage,
 		Tags: nostr.Tags{
 			{"d", "mod-1"},
 			{"title", "First Mod"},
@@ -62,7 +62,7 @@ func TestNoteAndRefsFor(t *testing.T) {
 	if len(refs) != 1 {
 		t.Fatalf("refsFor(A) = %d refs, want 1", len(refs))
 	}
-	if refs[0].Title != "First Mod" || refs[0].Coord != currentModKindCoord("mod-1", evt.PubKey) {
+	if refs[0].Title != "First Mod" || refs[0].Coord != kindMessageCoord("mod-1", evt.PubKey) {
 		t.Fatalf("unexpected ref: %+v", refs[0])
 	}
 
@@ -73,7 +73,7 @@ func TestNoteAndRefsFor(t *testing.T) {
 
 	// A second mod referencing the same blob adds a distinct ref.
 	evt2 := &nostr.Event{
-		Kind: currentModKind,
+		Kind: kindMessage,
 		Tags: nostr.Tags{
 			{"d", "mod-2"},
 			{"title", "Second Mod"},
@@ -91,7 +91,7 @@ func TestRefsCappedPerBlob(t *testing.T) {
 	// Far more distinct mods reference the same blob than the cap allows.
 	for i := 0; i < maxRefsPerBlob+25; i++ {
 		b.note(&nostr.Event{
-			Kind: currentModKind,
+			Kind: kindMessage,
 			Tags: nostr.Tags{
 				{"d", "mod-" + itoa(i)},
 				{"download", `{"file":"https://brs.degmods.com/` + refHashA + `.zip"}`},
@@ -117,6 +117,6 @@ func itoa(n int) string {
 	return string(buf[i:])
 }
 
-func currentModKindCoord(d, pk string) string {
-	return coordOf(&nostr.Event{Kind: currentModKind, PubKey: pk, Tags: nostr.Tags{{"d", d}}})
+func kindMessageCoord(d, pk string) string {
+	return coordOf(&nostr.Event{Kind: kindMessage, PubKey: pk, Tags: nostr.Tags{{"d", d}}})
 }

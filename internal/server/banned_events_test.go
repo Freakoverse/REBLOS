@@ -9,6 +9,7 @@ import (
 
 func TestBannedEvents_RejectsRepublishUntilUnban(t *testing.T) {
 	srv := testServer(t, &fakeStorage{stored: map[string][]byte{}})
+	srv.acceptAllKinds = true // isolate the takedown layer from the hub kind/member gate
 	pk, _ := nostr.GetPublicKey(nostr.GeneratePrivateKey())
 
 	modEvent := func(title string) *nostr.Event {
@@ -16,7 +17,7 @@ func TestBannedEvents_RejectsRepublishUntilUnban(t *testing.T) {
 		if title != "" {
 			tags = append(tags, nostr.Tag{"title", title})
 		}
-		return &nostr.Event{Kind: currentModKind, PubKey: pk, CreatedAt: nostr.Now(), Tags: tags}
+		return &nostr.Event{Kind: kindMessage, PubKey: pk, CreatedAt: nostr.Now(), Tags: tags}
 	}
 	ctx := context.Background()
 	key := moderationKey(modEvent("")) // "31142:<pk>:my-mod"

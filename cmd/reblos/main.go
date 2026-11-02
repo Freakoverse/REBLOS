@@ -65,7 +65,7 @@ func main() {
 			Blossom:     true,
 			Relay:       true,
 			MaxUploadMB: cfg.Upload.MaxSizeMB,
-			Kinds:       server.AcceptedModKinds(),
+			Kinds:       srv.AcceptedKinds(),
 			Gates:       announce.Gates{Pow: cfg.Download.PoWDifficulty},
 			Version:     1,
 		}, id.SecretKey, cfg.Announce.Relays, time.Duration(cfg.Announce.IntervalHours)*time.Hour)
