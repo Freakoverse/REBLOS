@@ -263,8 +263,8 @@ installer is the upgrade path (idempotent).
 - [x] Strip server-side ads (`ad.go`, `ads_admin.go` + tests + all wiring).
 - [x] Rebrand identifiers: Go module path -> `github.com/Freakoverse/REBLOS`; `cmd/degnode` -> `cmd/reblos`; Docker/compose/entrypoint, dashboard package name, README front door, "DEG Mods" brand strings. (Deferred: "mod"/kind-domain wording in comments + the deploy guide prose, which change when the kinds are retargeted.)
 - [ ] Rewrite `ingest.go` as the NIP-CHAT sync layer (§6).
-- [ ] Whitelist by hub coordinate + poster-set cache (§2).
-- [ ] Event store/serve gating + kind policy + role gating (§3).
+- [~] Whitelist by hub coordinate + poster-set cache (§2). Done: `internal/hub` package — `membertree.go` (parse index + leaf pages -> `PosterSet`, matched to the client's `members.ts`/`lkh.ts` formats) and `registry.go` (whitelist-by-coordinate, naddr/coordinate parsing, persistent). Pending: the live poster-set cache that fetches the `m`-indexed blobs from storage/remote Blossom and refreshes on epoch change, plus the 36942 watcher and the admin API/dashboard to manage the hub registry.
+- [ ] Event store/serve gating + kind policy + role gating (§3), consuming the poster-set cache.
 - [ ] Per-type + per-hub upload caps; add text/plain + media magics (§1 CHANGE).
 - [ ] Retarget `blob_refs` to hub events (§5).
 - [ ] Storage re-routing UI + migration (§4).
