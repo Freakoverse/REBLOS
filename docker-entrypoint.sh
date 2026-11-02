@@ -5,8 +5,8 @@ set -e
 # root, which the unprivileged app user can't write to. Fix ownership when needed
 # (only when the app user can't already write — so we don't do a slow recursive
 # chown of a large disk-backend blob tree on every start), then drop privileges.
-if ! su-exec degnode test -w /app/data 2>/dev/null; then
-	chown -R degnode:degnode /app/data
+if ! su-exec reblos test -w /app/data 2>/dev/null; then
+	chown -R reblos:reblos /app/data
 fi
 
-exec su-exec degnode "$@"
+exec su-exec reblos "$@"

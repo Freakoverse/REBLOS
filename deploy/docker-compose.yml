@@ -1,10 +1,10 @@
-# DEG Mods node + Caddy (automatic HTTPS). Run from this directory:
+# REBLOS node + Caddy (automatic HTTPS). Run from this directory:
 #
 #   docker compose up -d
 #
 # The first deploy builds the node image from the source in the parent dir.
 # Once you publish an image (e.g. to GHCR), replace the `build:` block with
-#   image: ghcr.io/degmods/blossom-relay-server:latest
+#   image: ghcr.io/freakoverse/reblos:latest
 # and a new operator can run THIS FILE ALONE — nothing else on their machine.
 services:
   node:
@@ -13,7 +13,7 @@ services:
     restart: unless-stopped
     env_file: .env           # R2_ACCESS_KEY / R2_SECRET_KEY  (or S3_ACCESS_KEY / S3_SECRET_KEY)
     volumes:
-      - ./data:/app/data                       # identity key, event store, ad metrics, (disk) blobs
+      - ./data:/app/data                       # identity key, event store, state, (disk) blobs
       - ./config.yml:/app/config.yml:ro        # your config (no secrets — those come from .env)
     expose:
       - "3000"               # internal only; Caddy is the public entrypoint

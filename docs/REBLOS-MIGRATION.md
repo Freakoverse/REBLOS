@@ -123,9 +123,21 @@ recipient `p` tag being in the poster set (deliver only to members).
 ## 3. Event gating (store) and serving (read)
 
 **Store** (khatru `RejectEvent`): accept iff kind is in the allowed set AND the
-author is in the tagged hub's poster set (role check on top for §2). The event
-must declare its hub via an indexed tag (the hub's `a` coordinate) so the relay
-can pick the poster set. *Confirm NIP-CHAT tags 36943 with the hub coordinate.*
+author is in the tagged hub's poster set (role check on top for §2).
+
+**How a message declares its hub** (confirmed in `client/src/lib/nostr/events.ts`):
+kind-36943 messages carry `["h", <hubDTag>]` and `["c", <channelId>]`. The `a`
+tag is only used for reply/root references to *other messages*
+(`36943:<pubkey>:<dTag>`), never the hub's 36942 coordinate. So the relay keys
+gating off **`#h` (hub dTag)** and channel/role gating off **`#c`**, not an `#a`
+coordinate.
+
+Caveat: `#h` is the dTag alone, not `<pubkey>:<dTag>`, so two different owners
+could pick the same dTag. The whitelist entry holds the full coordinate
+(pubkey + dTag), and the relay accepts a `#h`-tagged message only if its author
+is in the P-set of a whitelisted hub with that dTag. That author-in-P-set check
+disambiguates naturally (a message validates only for the hub it actually belongs
+to), so colliding dTags are harmless.
 
 **Kind policy:** toggle **allow-all** vs **allow-select**. Select default = the
 NIP-CHAT-specific kinds + a configurable extra set (kind 1, DM kinds, etc.) +
@@ -134,9 +146,10 @@ admin-added custom kinds in the dashboard. Generalizes the existing
 
 **Serve** ("give me this hub's events, members only"): largely falls out of store
 gating (non-member events were never stored). Add read-side enforcement as
-belt-and-suspenders: on a hub-scoped `REQ`, intersect `authors` with the poster
-set so even events that slipped in (pre-gating / federated) are not served. This
-is the anti-spam guarantee: members never download garbage to reject locally.
+belt-and-suspenders: on a `REQ` scoped to a hub (`#h` = dTag), intersect `authors`
+with that hub's poster set so even events that slipped in (pre-gating / federated)
+are not served. This is the anti-spam guarantee: members never download garbage to
+reject locally.
 
 **Max event size:** a configurable dashboard knob. Note the 64 KB figure is
 NIP-CHAT's self-imposed *hub-event* cap (relieved by the struct blob), not a
@@ -191,9 +204,9 @@ Mostly a retarget of `ingest.go`. **Pull-based** (this node protects itself;
 clients already publish widely via failover).
 
 **Event sync:** per whitelisted hub, subscribe to the hub's **own declared relay
-hints** with filters scoped to the hub (`kinds`, `#a` hub coord, `authors` =
-poster set) and store the results. The member-gate is reused on this path, so we
-never mirror non-member spam.
+hints** with filters scoped to the hub (`kinds`, `#h` = dTag, `authors` = poster
+set) and store the results. The member-gate is reused on this path, so we never
+mirror non-member spam.
 
 **Blossom sync:** per whitelisted hub, enumerate the current blob hashes from
 plaintext data (36942 `m`/`struct` tags -> member-tree index -> page/spine/history
@@ -248,7 +261,7 @@ installer is the upgrade path (idempotent).
 - [x] Relicense `LICENSE` (MIT, copyright REBLOS Chat).
 - [x] `VERSION` = 0.1.0.
 - [x] Strip server-side ads (`ad.go`, `ads_admin.go` + tests + all wiring).
-- [ ] Rebrand: Go module path `github.com/DEGMods/Blossom-Relay-Server` -> REBLOS; `degnode` -> `reblos`; "mod"/"DEG" wording.
+- [x] Rebrand identifiers: Go module path -> `github.com/Freakoverse/REBLOS`; `cmd/degnode` -> `cmd/reblos`; Docker/compose/entrypoint, dashboard package name, README front door, "DEG Mods" brand strings. (Deferred: "mod"/kind-domain wording in comments + the deploy guide prose, which change when the kinds are retargeted.)
 - [ ] Rewrite `ingest.go` as the NIP-CHAT sync layer (§6).
 - [ ] Whitelist by hub coordinate + poster-set cache (§2).
 - [ ] Event store/serve gating + kind policy + role gating (§3).

@@ -190,8 +190,8 @@ func (s *Server) gate(next http.Handler) http.Handler {
 			return
 		}
 		// A blob uploaded by a whitelisted (trusted) npub skips the download gate, so
-		// a trusted author's files are directly downloadable — no PoW/ad — including
-		// from a plain browser or a shared link, not just inside the DEG Mods client.
+		// a trusted author's files are directly downloadable (no PoW), including from
+		// a plain browser or a shared link, not just inside the client.
 		if r.Method == http.MethodGet &&
 			s.powDifficulty > 0 && !s.gateExempt(hash) {
 			if !s.checkGates(w, r, hash) {

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DEGMods/Blossom-Relay-Server/internal/config"
-	"github.com/DEGMods/Blossom-Relay-Server/internal/storage"
+	"github.com/Freakoverse/REBLOS/internal/config"
+	"github.com/Freakoverse/REBLOS/internal/storage"
 	"github.com/nbd-wtf/go-nostr"
 )
 

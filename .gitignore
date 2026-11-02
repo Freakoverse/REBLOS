@@ -8,6 +8,6 @@
 /deploy/config.yml
 /deploy/data/
 # build artifacts
-/degnode
-/degnode.exe
+/reblos
+/reblos.exe
 *.exe

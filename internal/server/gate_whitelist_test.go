@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/DEGMods/Blossom-Relay-Server/internal/config"
+	"github.com/Freakoverse/REBLOS/internal/config"
 	"github.com/nbd-wtf/go-nostr"
 )
 

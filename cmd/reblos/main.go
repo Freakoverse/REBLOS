@@ -1,5 +1,5 @@
-// Command degnode runs a DEG Mods node: a Blossom blob server + mod-scoped Nostr
-// relay, with pluggable storage and an optional PoW download gate.
+// Command reblos runs a REBLOS node: a Blossom blob server + a Nostr relay,
+// with pluggable storage and an optional PoW download gate.
 package main
 
 import (
@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/DEGMods/Blossom-Relay-Server/internal/announce"
-	"github.com/DEGMods/Blossom-Relay-Server/internal/config"
-	"github.com/DEGMods/Blossom-Relay-Server/internal/identity"
-	"github.com/DEGMods/Blossom-Relay-Server/internal/server"
-	"github.com/DEGMods/Blossom-Relay-Server/internal/storage"
+	"github.com/Freakoverse/REBLOS/internal/announce"
+	"github.com/Freakoverse/REBLOS/internal/config"
+	"github.com/Freakoverse/REBLOS/internal/identity"
+	"github.com/Freakoverse/REBLOS/internal/server"
+	"github.com/Freakoverse/REBLOS/internal/storage"
 )
 
 func main() {

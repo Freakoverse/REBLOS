@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	"github.com/DEGMods/Blossom-Relay-Server/internal/storage"
+	"github.com/Freakoverse/REBLOS/internal/storage"
 	"github.com/fiatjaf/khatru/blossom"
 	"github.com/nbd-wtf/go-nostr"
 )

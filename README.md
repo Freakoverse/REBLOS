@@ -1,10 +1,16 @@
-# blossom-relay-server
+# REBLOS
 
-A self-hostable, federated **Blossom server + Nostr relay** node for
-[DEG Mods](https://degmods.com) — a decentralized game-mods platform. It serves
-mod files (content-addressed by SHA-256) from pluggable storage and runs a
-mod-scoped Nostr relay, with anti-abuse **proof-of-work** and ad-view **download
-gates** instead of payments or logins.
+**REBLOS Chat** (Relay & Blossom Server for NIP-CHAT; short **REBLOS** = Relay
+Blossom) is a self-hostable **Blossom server + Nostr relay** that an owner or a
+whitelisted operator runs to host their NIP-CHAT hubs' events and Blossom files,
+with hub-scoped access rules. Content is addressed by SHA-256 and served from
+pluggable storage (disk / Cloudflare R2 / self-hosted S3).
+
+It is a fork of the DEG Mods Blossom-Relay-Server, being retargeted from game
+mods to NIP-CHAT. See **[docs/REBLOS-MIGRATION.md](docs/REBLOS-MIGRATION.md)** for
+the plan and current status. Parts of this README and the deploy guide below still
+describe the upstream mod-oriented behavior and will be rewritten as the retarget
+lands.
 
 Licensed **MIT** — anyone can run a node.
 

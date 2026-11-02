@@ -1,4 +1,4 @@
-module github.com/DEGMods/Blossom-Relay-Server
+module github.com/Freakoverse/REBLOS
 
 go 1.25.3
 
