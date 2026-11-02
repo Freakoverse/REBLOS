@@ -1,0 +1,13 @@
+# secrets & local state
+/config.yml
+/config.*.yml
+/data/
+/data-*/
+# deploy secrets & state (keep the .example templates)
+/deploy/.env
+/deploy/config.yml
+/deploy/data/
+# build artifacts
+/degnode
+/degnode.exe
+*.exe

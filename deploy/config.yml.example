@@ -1,0 +1,66 @@
+# Node config for the Docker + Caddy deploy. Copy to config.yml and edit.
+# Secrets are NOT here — they come from .env (R2_ACCESS_KEY / R2_SECRET_KEY).
+
+listen: ":3000"                          # Caddy forwards here (container-internal)
+public_url: "https://brs.example.com"    # YOUR public hostname — must change (it's what the node announces)
+data_dir: "/app/data"                    # the mounted volume; do not change
+
+backend: "r2"
+
+log:
+  level: "info"
+  format: "json"                         # structured logs for the server
+
+r2:
+  endpoint: "<accountid>.r2.cloudflarestorage.com"   # R2 → Settings → S3 API
+  region: "auto"
+  bucket: "your-blossom-bucket"
+  use_ssl: true
+
+upload:
+  max_size_mb: 500
+  max_concurrent: 4
+  min_free_disk_mb: 1024
+  allowed_types: ["zip"]                  # accepted file types (magic-detected). ["*"] = any; e.g. ["zip", "rar", "7z"]
+
+relay:
+  # YOUR npub, not DEG Mods'. Two powers: the NIP-86 management API
+  # (ban/allow), and the only key allowed to publish moderation tags
+  # (kind 30985) — tags applied to other people's posts. Leave it empty
+  # and moderation tags are refused from everyone.
+  admin_npub: "npub1youradminkey"
+  min_event_pow: 0
+  # Drop the mod-scoped kind allowlist: accept any kind, from anyone. For a
+  # fork that wants a general-purpose relay. Bans, takedowns and honored
+  # deletions still apply, but the kind scope stops limiting abuse — set
+  # min_event_pow above if you turn this on.
+  accept_all_kinds: false
+
+download:
+  # START WITH GATES OFF. Verify read parity + upload first, then turn these on.
+  pow_difficulty: 0                      # e.g. 18–20 to enable the PoW gate
+  challenge_ttl: 600
+  trusted_ip_header: "X-Forwarded-For"   # Caddy sets this to the real client IP
+
+announce:
+  # Advertise this node over Nostr so other nodes/clients can discover it.
+  enabled: true
+  interval_hours: 168                    # re-publish weekly (7 days)
+  # Kept the same as ingest.relays so the node uses one relay set (fewer dup conns).
+  relays:
+    - "wss://relay.primal.net"
+    - "wss://nos.lol"
+    - "wss://relay.nostr.band"
+    - "wss://relay.snort.social"
+    - "wss://relay.wellorder.net"
+
+ingest:
+  # Mirror every mod (31142) + legacy mod (30402 t=GameMod) from these relays into
+  # this node, so it becomes a complete mod DB clients can query in one place.
+  enabled: true
+  relays:
+    - "wss://relay.primal.net"
+    - "wss://nos.lol"
+    - "wss://relay.nostr.band"
+    - "wss://relay.snort.social"
+    - "wss://relay.wellorder.net"

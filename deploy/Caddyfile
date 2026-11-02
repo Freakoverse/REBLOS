@@ -1,0 +1,13 @@
+# Change this hostname to yours. Its DNS A record must point at this box
+# (Cloudflare DNS-only / grey cloud) so Caddy can get a Let's Encrypt cert.
+# Caddy terminates TLS and forwards to the node, setting X-Forwarded-For to the
+# real client IP — which is why the node config uses trusted_ip_header: X-Forwarded-For.
+brs.degmods.com {
+	reverse_proxy node:3000
+
+	# Uploads can be up to 500 MB (matches upload.max_size_mb). Give the proxy
+	# generous timeouts so large transfers aren't cut off.
+	request_body {
+		max_size 550MB
+	}
+}

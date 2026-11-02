@@ -1,0 +1,5 @@
+# Frontend build tooling. dist/ is intentionally NOT ignored — it's committed
+# and embedded into the Go binary so the node builds without a Node toolchain.
+node_modules/
+.vite/
+*.tsbuildinfo
