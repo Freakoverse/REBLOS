@@ -31,8 +31,8 @@ func TestGate_WhitelistedOwnerBypass(t *testing.T) {
 		return w.Code
 	}
 
-	gated := strings.Repeat("a", 64)     // no owner → gated
-	exempt := strings.Repeat("b", 64)    // owner is whitelisted → exempt
+	gated := strings.Repeat("a", 64)  // no owner → gated
+	exempt := strings.Repeat("b", 64) // owner is whitelisted → exempt
 	wl, _ := nostr.GetPublicKey(nostr.GeneratePrivateKey())
 	srv.owners.add(exempt, wl)
 	if err := srv.white.add(wl, "trusted"); err != nil {

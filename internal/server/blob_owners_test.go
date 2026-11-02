@@ -18,8 +18,8 @@ func TestBlobOwnersSet(t *testing.T) {
 	o.add("hash1", "pk2") // second uploader of the same content — appended
 	o.add("hash1", "pk1") // duplicate — ignored
 	o.add("hash2", "pk9")
-	o.add("", "pkX")      // ignored — no hash
-	o.add("hash3", "")    // ignored — no pubkey
+	o.add("", "pkX")   // ignored — no hash
+	o.add("hash3", "") // ignored — no pubkey
 
 	if got := o.first("hash1"); got != "pk1" {
 		t.Fatalf("first(hash1) = %q, want pk1 (original preserved)", got)

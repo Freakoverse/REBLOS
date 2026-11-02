@@ -53,7 +53,7 @@ func TestUploadCapsValidation(t *testing.T) {
 	orig, origW := c.snapshotMB()
 
 	for _, tc := range []struct {
-		name             string
+		name              string
 		normal, whitelist int64
 	}{
 		{"zero normal", 0, 2500},

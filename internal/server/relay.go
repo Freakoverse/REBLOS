@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/Freakoverse/REBLOS/internal/hub"
 	"github.com/fiatjaf/eventstore/badger"
 	"github.com/fiatjaf/khatru"
 	"github.com/nbd-wtf/go-nostr"
@@ -159,8 +160,12 @@ func (s *Server) setupRelay(store *badger.BadgerBackend, adminPubkey string) {
 	// Label blobs against the mods that reference them (dashboard only). This runs
 	// after the event is stored and its return value is ignored, so it can never
 	// reject an event or change what gets persisted — pure observation.
-	r.OnEventSaved = append(r.OnEventSaved, func(_ context.Context, evt *nostr.Event) {
+	r.OnEventSaved = append(r.OnEventSaved, func(ctx context.Context, evt *nostr.Event) {
 		s.refs.note(evt)
+		// A new hub revision republished here refreshes that hub's poster set live.
+		if evt.Kind == hub.Kind {
+			s.reconcileHubEvent(ctx, evt)
+		}
 	})
 
 	if adminPubkey == "" {

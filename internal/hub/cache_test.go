@@ -13,7 +13,7 @@ type fakeBuilder struct {
 	fail  bool
 }
 
-func (b *fakeBuilder) build(_ context.Context, indexHash string) (PosterSet, error) {
+func (b *fakeBuilder) build(_ context.Context, indexHash string, _ []string) (PosterSet, error) {
 	b.calls++
 	if b.fail {
 		return PosterSet{}, errors.New("build failed")
@@ -39,7 +39,7 @@ func TestCacheBuildsAndCaches(t *testing.T) {
 	b := &fakeBuilder{sets: map[string]PosterSet{"idx1": set(pkA, pkB)}}
 	c := NewPosterCache(b.build)
 
-	ps, err := c.Update(context.Background(), coord, "idx1", 1)
+	ps, err := c.Update(context.Background(), coord, "idx1", 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestCacheBuildsAndCaches(t *testing.T) {
 	}
 
 	// Same index hash -> no rebuild.
-	if _, err := c.Update(context.Background(), coord, "idx1", 1); err != nil {
+	if _, err := c.Update(context.Background(), coord, "idx1", 1, nil); err != nil {
 		t.Fatal(err)
 	}
 	if b.calls != 1 {
@@ -72,8 +72,8 @@ func TestCacheRebuildsOnNewEpoch(t *testing.T) {
 	}}
 	c := NewPosterCache(b.build)
 
-	_, _ = c.Update(context.Background(), coord, "idx1", 1)
-	ps, err := c.Update(context.Background(), coord, "idx2", 2)
+	_, _ = c.Update(context.Background(), coord, "idx1", 1, nil)
+	ps, err := c.Update(context.Background(), coord, "idx2", 2, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,9 +96,9 @@ func TestCacheIgnoresStaleRevision(t *testing.T) {
 	c := NewPosterCache(b.build)
 
 	// Newer revision lands first.
-	_, _ = c.Update(context.Background(), coord, "idx2", 2)
+	_, _ = c.Update(context.Background(), coord, "idx2", 2, nil)
 	// An out-of-order older revision (different hash, lower epoch) must not win.
-	ps, err := c.Update(context.Background(), coord, "idx1", 1)
+	ps, err := c.Update(context.Background(), coord, "idx1", 1, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,10 +113,10 @@ func TestCacheIgnoresStaleRevision(t *testing.T) {
 func TestCacheKeepsLastGoodOnBuildError(t *testing.T) {
 	b := &fakeBuilder{sets: map[string]PosterSet{"idx1": set(pkA)}}
 	c := NewPosterCache(b.build)
-	_, _ = c.Update(context.Background(), coord, "idx1", 1)
+	_, _ = c.Update(context.Background(), coord, "idx1", 1, nil)
 
 	b.fail = true
-	ps, err := c.Update(context.Background(), coord, "idx2", 2)
+	ps, err := c.Update(context.Background(), coord, "idx2", 2, nil)
 	if err == nil {
 		t.Fatal("expected the build error to surface")
 	}
@@ -131,7 +131,7 @@ func TestCacheKeepsLastGoodOnBuildError(t *testing.T) {
 func TestCacheRemove(t *testing.T) {
 	b := &fakeBuilder{sets: map[string]PosterSet{"idx1": set(pkA)}}
 	c := NewPosterCache(b.build)
-	_, _ = c.Update(context.Background(), coord, "idx1", 1)
+	_, _ = c.Update(context.Background(), coord, "idx1", 1, nil)
 	if c.Len() != 1 {
 		t.Fatalf("len = %d, want 1", c.Len())
 	}

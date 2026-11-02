@@ -15,7 +15,7 @@ import (
 // can never clobber a newer poster set.
 type PosterCache struct {
 	mu    sync.RWMutex
-	build func(ctx context.Context, indexHash string) (PosterSet, error)
+	build func(ctx context.Context, indexHash string, remotes []string) (PosterSet, error)
 	byHub map[string]*cachedPosters
 }
 
@@ -27,8 +27,9 @@ type cachedPosters struct {
 }
 
 // NewPosterCache builds a cache. build fetches + parses the member tree for an
-// index hash (in production: BuildPosterSet over a storage-backed Fetcher).
-func NewPosterCache(build func(ctx context.Context, indexHash string) (PosterSet, error)) *PosterCache {
+// index hash, using the hub's Blossom server hints (remotes) as fallbacks beyond
+// the local store (in production: BuildPosterSet over a storage-backed Fetcher).
+func NewPosterCache(build func(ctx context.Context, indexHash string, remotes []string) (PosterSet, error)) *PosterCache {
 	return &PosterCache{build: build, byHub: map[string]*cachedPosters{}}
 }
 
@@ -40,7 +41,7 @@ func NewPosterCache(build func(ctx context.Context, indexHash string) (PosterSet
 //   - Different hash, epoch >= cached: rebuild and store.
 //   - Different hash, epoch < cached: a stale/out-of-order revision; the rebuilt
 //     set is discarded and the newer cached set is kept.
-func (c *PosterCache) Update(ctx context.Context, coord, indexHash string, epoch int) (PosterSet, error) {
+func (c *PosterCache) Update(ctx context.Context, coord, indexHash string, epoch int, remotes []string) (PosterSet, error) {
 	c.mu.RLock()
 	cur, ok := c.byHub[coord]
 	c.mu.RUnlock()
@@ -48,7 +49,7 @@ func (c *PosterCache) Update(ctx context.Context, coord, indexHash string, epoch
 		return cur.set, nil
 	}
 
-	set, err := c.build(ctx, indexHash)
+	set, err := c.build(ctx, indexHash, remotes)
 	if err != nil {
 		if ok {
 			return cur.set, err // keep serving the last good set on a build failure

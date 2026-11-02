@@ -21,6 +21,7 @@ import (
 
 	"github.com/Freakoverse/REBLOS/dashboard"
 	"github.com/Freakoverse/REBLOS/internal/config"
+	"github.com/Freakoverse/REBLOS/internal/hub"
 	"github.com/Freakoverse/REBLOS/internal/storage"
 	"github.com/fiatjaf/eventstore/badger"
 	"github.com/fiatjaf/khatru"
@@ -52,13 +53,13 @@ type Server struct {
 	block              *blocklist
 	white              *whitelist
 	bannedEv           *bannedEvents
-	deletions          *deletions  // author-initiated NIP-09 takedowns (persistent)
-	owners             *blobOwners // hash -> uploader pubkey (persistent)
-	refs               *blobRefs   // hash -> mods that reference it (in-memory, dashboard labelling)
-	caps               *uploadCaps // per-upload size caps, runtime-adjustable (persistent)
+	deletions          *deletions         // author-initiated NIP-09 takedowns (persistent)
+	owners             *blobOwners        // hash -> uploader pubkey (persistent)
+	refs               *blobRefs          // hash -> mods that reference it (in-memory, dashboard labelling)
+	caps               *uploadCaps        // per-upload size caps, runtime-adjustable (persistent)
 	blacklist          *blacklistedHashes // blob hashes barred from upload/download (persistent)
 	quarantine         *quarantine        // blobs withheld from download (reversible; persistent)
-	adminPubkey        string      // hex; the only key allowed to delete blobs (moderation)
+	adminPubkey        string             // hex; the only key allowed to delete blobs (moderation)
 
 	// admin blob-listing cache (avoids a full storage scan on every page click)
 	blobCacheMu sync.Mutex
@@ -70,6 +71,11 @@ type Server struct {
 	challengeTTL    time.Duration
 	trustedIPHeader string
 	gateKey         []byte
+
+	// NIP-CHAT hubs: whitelist-by-coordinate (persistent) + the derived per-hub
+	// poster-set cache (in-memory, rebuilt from the member tree on each revision).
+	hubs    *hub.Registry
+	posters *hub.PosterCache
 }
 
 // New builds the node's HTTP handler (streaming upload + blossom + relay).
@@ -142,10 +148,21 @@ func New(cfg *config.Config, st storage.Storage, gateSecret string) (*Server, er
 		s.allowedUploadTypes = []string{"zip"}
 	}
 
+	// Hub registry + poster-set cache. The cache's build fetches the member-tree
+	// blobs local-first (our own storage) then from the hub's Blossom hints, with
+	// mandatory sha256 verification, and parses the plaintext leaf pages.
+	s.hubs = hub.LoadRegistry(filepath.Join(cfg.DataDir, "hubs.json"))
+	s.posters = hub.NewPosterCache(func(ctx context.Context, indexHash string, remotes []string) (hub.PosterSet, error) {
+		f := &hub.Fetcher{Local: st, Remotes: remotes}
+		return hub.BuildPosterSet(indexHash, f.Bind(ctx))
+	})
+
 	s.setupRelay(store, s.adminPubkey)
 	// Label existing blobs against the mods already stored (dashboard only). Runs
 	// before we start serving, so no ingest can race it.
 	s.backfillRefs(context.Background())
+	// Build poster sets for whitelisted hubs whose 36942 event is already stored.
+	s.reconcileHubsFromStore(context.Background())
 
 	// Streaming /upload in front; everything else (blossom GET, relay WS, NIP-11,
 	// NIP-86) → the relay.
@@ -168,7 +185,7 @@ func New(cfg *config.Config, st storage.Storage, gateSecret string) (*Server, er
 	mux.HandleFunc("GET /admin/stats", s.handleAdminStats)
 	mux.HandleFunc("GET /admin/events", s.handleAdminEvents)
 	mux.HandleFunc("GET /admin/blobs", s.handleAdminBlobs)
-	mux.HandleFunc("GET /admin/blob/{hash}", s.handleAdminBlobDownload) // gate-free admin download
+	mux.HandleFunc("GET /admin/blob/{hash}", s.handleAdminBlobDownload)  // gate-free admin download
 	mux.HandleFunc("DELETE /admin/blob/{hash}", s.handleAdminBlobDelete) // NIP-98 admin delete (dashboard)
 	mux.HandleFunc("GET /admin/blacklist", s.handleBlacklistList)
 	mux.HandleFunc("POST /admin/blacklist", s.handleBlacklistAdd)
