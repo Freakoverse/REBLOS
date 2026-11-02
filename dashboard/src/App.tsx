@@ -5,14 +5,16 @@ import { getWhitelist } from './api'
 import { cn, truncateMiddle } from './lib'
 import { toast, Toaster } from './toast'
 import { FilesTab } from './components/FilesTab'
+import { HubsTab } from './components/HubsTab'
 import { RelayTab } from './components/RelayTab'
 import { WhitelistTab } from './components/WhitelistTab'
 import { SettingsTab } from './components/SettingsTab'
 
-const SESSION_KEY = 'brs-dashboard:pubkey'
-type Tab = 'blobs' | 'relay' | 'whitelist' | 'settings'
+const SESSION_KEY = 'reblos-dashboard:pubkey'
+type Tab = 'hubs' | 'blobs' | 'relay' | 'whitelist' | 'settings'
 
 const TABS: { id: Tab; label: string; icon: typeof Boxes }[] = [
+  { id: 'hubs', label: 'Hubs', icon: Boxes },
   { id: 'blobs', label: 'Files', icon: HardDrive },
   { id: 'relay', label: 'Relay', icon: Radio },
   { id: 'whitelist', label: 'Whitelist', icon: ShieldCheck },
@@ -22,7 +24,7 @@ const TABS: { id: Tab; label: string; icon: typeof Boxes }[] = [
 export function App() {
   const [pubkey, setPubkey] = useState<string | null>(() => localStorage.getItem(SESSION_KEY))
   const [connecting, setConnecting] = useState(false)
-  const [tab, setTab] = useState<Tab>('blobs')
+  const [tab, setTab] = useState<Tab>('hubs')
 
   const login = async () => {
     setConnecting(true)
@@ -54,7 +56,7 @@ export function App() {
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
           <div className="flex items-center gap-2">
             <Flame className="h-5 w-5 text-primary" />
-            <span className="text-sm font-bold tracking-tight">BRS Dashboard</span>
+            <span className="text-sm font-bold tracking-tight">REBLOS Dashboard</span>
           </div>
           <div className="flex items-center gap-3">
             <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
@@ -89,6 +91,7 @@ export function App() {
           ))}
         </div>
 
+        {tab === 'hubs' && <HubsTab />}
         {tab === 'blobs' && <FilesTab />}
         {tab === 'relay' && <RelayTab />}
         {tab === 'whitelist' && <WhitelistTab />}
@@ -129,7 +132,7 @@ function Login({ connecting, onLogin }: { connecting: boolean; onLogin: () => vo
           </div>
         </div>
         <div className="space-y-1.5">
-          <h1 className="text-lg font-semibold">BRS Dashboard</h1>
+          <h1 className="text-lg font-semibold">REBLOS Dashboard</h1>
           <p className="text-sm text-muted-foreground">
             Sign in with your Nostr extension. Only the node’s admin key is admitted — your key
             never leaves the extension.

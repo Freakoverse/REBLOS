@@ -269,4 +269,4 @@ installer is the upgrade path (idempotent).
 - [ ] Retarget `blob_refs` to hub events (§5).
 - [ ] Storage re-routing UI + migration (§4).
 - [ ] One-command installer + CI image publish (§7).
-- [ ] Dashboard rebrand + remove ad UI.
+- [~] Dashboard: ad UI removed; rebranded to "REBLOS Dashboard" (App + index.html title + session key); new **Hubs tab** (default tab) to add a hub by naddr/coordinate, list hubs with member count + epoch status, and remove — wired to `/admin/hubs`. Verified the built bundle boots to the login screen. Pending: surface per-type upload caps / storage backend in the Settings tab as those features land.

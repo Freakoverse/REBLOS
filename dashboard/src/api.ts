@@ -261,6 +261,39 @@ export async function resetUploadCaps(): Promise<void> {
   if (!res.ok) throw new Error(await reason(res))
 }
 
+// ─── Hubs (the NIP-CHAT hub whitelist) ──────────────────────────────
+
+export interface HubEntry {
+  coordinate: string
+  pubkey: string
+  d: string
+  note?: string
+  relays?: string[]
+  /** Poster-set epoch, or -1 if the member tree has not been read yet. */
+  epoch: number
+  /** Cached poster-set size (members) for this hub. */
+  members: number
+}
+
+export async function listHubs(): Promise<HubEntry[]> {
+  const res = await adminFetch('/admin/hubs', 'GET')
+  if (!res.ok) throw new Error(await reason(res))
+  const data = (await res.json()) as { hubs?: HubEntry[] }
+  return data.hubs ?? []
+}
+
+/** Whitelist a hub by naddr or raw "36942:<pubkey>:<dTag>" coordinate. */
+export async function addHub(ref: string, note?: string): Promise<HubEntry> {
+  const res = await adminFetch('/admin/hubs', 'POST', { ref, note })
+  if (!res.ok) throw new Error(await reason(res))
+  return res.json()
+}
+
+export async function removeHub(coordinate: string): Promise<void> {
+  const res = await adminFetch('/admin/hubs', 'DELETE', { coordinate })
+  if (!res.ok) throw new Error(await reason(res))
+}
+
 // ─── Node runtime stats ─────────────────────────────────────────────
 
 export interface NodeStats {
