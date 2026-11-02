@@ -199,6 +199,9 @@ func New(cfg *config.Config, st storage.Storage, gateSecret string) (*Server, er
 	mux.HandleFunc("GET /admin/banned-events", s.handleBannedEventsList)
 	mux.HandleFunc("POST /admin/banned-events", s.handleBanEvent)
 	mux.HandleFunc("DELETE /admin/banned-events", s.handleUnbanEvent)
+	mux.HandleFunc("GET /admin/hubs", s.handleAdminHubsList)
+	mux.HandleFunc("POST /admin/hubs", s.handleAdminHubsAdd)
+	mux.HandleFunc("DELETE /admin/hubs", s.handleAdminHubsRemove)
 	mux.HandleFunc("OPTIONS /admin/{rest...}", func(w http.ResponseWriter, r *http.Request) {
 		setAdminCORS(w)
 		w.WriteHeader(http.StatusNoContent)

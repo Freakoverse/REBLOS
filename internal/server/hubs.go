@@ -2,8 +2,11 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"log/slog"
+	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/Freakoverse/REBLOS/internal/hub"
 	"github.com/nbd-wtf/go-nostr"
@@ -104,4 +107,101 @@ func (s *Server) latestHubEvent(ctx context.Context, pubkey, dTag string) *nostr
 		}
 	}
 	return latest
+}
+
+// ── admin API: hub whitelist (NIP-98 admin, same as the other /admin/* routes) ──
+
+// hubView is a registry entry enriched with the live poster-set status.
+type hubView struct {
+	Coordinate string   `json:"coordinate"`
+	Pubkey     string   `json:"pubkey"`
+	DTag       string   `json:"d"`
+	Note       string   `json:"note,omitempty"`
+	Relays     []string `json:"relays,omitempty"`
+	Epoch      int      `json:"epoch"`   // poster-set epoch, -1 if not built yet
+	Members    int      `json:"members"` // cached poster-set size, 0 if not built
+}
+
+func (s *Server) hubViewOf(h *hub.Hub) hubView {
+	coord := h.Coordinate()
+	v := hubView{Coordinate: coord, Pubkey: h.Pubkey, DTag: h.DTag, Note: h.Note, Relays: h.Relays, Epoch: s.posters.Epoch(coord)}
+	if ps, ok := s.posters.Get(coord); ok {
+		v.Members = ps.Len()
+	}
+	return v
+}
+
+// handleAdminHubsList returns every whitelisted hub with its poster-set status.
+func (s *Server) handleAdminHubsList(w http.ResponseWriter, r *http.Request) {
+	setAdminCORS(w)
+	if err := s.verifyAdmin(r); err != nil {
+		httpErr(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	hubs := s.hubs.List()
+	out := make([]hubView, 0, len(hubs))
+	for _, h := range hubs {
+		out = append(out, s.hubViewOf(h))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"hubs": out})
+}
+
+// handleAdminHubsAdd whitelists a hub by naddr or raw coordinate, then reconciles
+// its poster set from the local store (if its 36942 is already stored).
+func (s *Server) handleAdminHubsAdd(w http.ResponseWriter, r *http.Request) {
+	setAdminCORS(w)
+	if err := s.verifyAdmin(r); err != nil {
+		httpErr(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	var body struct {
+		Ref  string `json:"ref"` // naddr or "36942:<pubkey>:<dTag>"
+		Note string `json:"note"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpErr(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	h, err := hub.ParseHubRef(strings.TrimSpace(body.Ref))
+	if err != nil {
+		httpErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	h.Note = strings.TrimSpace(body.Note)
+	h.Added = nostr.Now().Time().Unix()
+	if err := s.hubs.Add(h); err != nil {
+		httpErr(w, http.StatusInternalServerError, "save failed")
+		return
+	}
+	// Build the poster set now if we already hold the hub event; otherwise it
+	// builds when the 36942 arrives (OnEventSaved) or on the next startup.
+	if ev := s.latestHubEvent(r.Context(), h.Pubkey, h.DTag); ev != nil {
+		s.reconcileHubEvent(r.Context(), ev)
+	}
+	slog.Info("hub whitelisted", "coord", h.Coordinate())
+	writeJSON(w, http.StatusOK, s.hubViewOf(h))
+}
+
+// handleAdminHubsRemove drops a hub from the whitelist and clears its poster set.
+func (s *Server) handleAdminHubsRemove(w http.ResponseWriter, r *http.Request) {
+	setAdminCORS(w)
+	if err := s.verifyAdmin(r); err != nil {
+		httpErr(w, http.StatusUnauthorized, err.Error())
+		return
+	}
+	var body struct {
+		Coordinate string `json:"coordinate"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpErr(w, http.StatusBadRequest, "invalid JSON")
+		return
+	}
+	coord := strings.TrimSpace(body.Coordinate)
+	if _, err := s.hubs.Remove(coord); err != nil {
+		httpErr(w, http.StatusInternalServerError, "save failed")
+		return
+	}
+	s.posters.Remove(coord)
+	slog.Info("hub removed from whitelist", "coord", coord)
+	w.WriteHeader(http.StatusNoContent)
 }
