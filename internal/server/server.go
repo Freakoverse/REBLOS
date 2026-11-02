@@ -147,7 +147,7 @@ func New(cfg *config.Config, st storage.Storage, gateSecret string) (*Server, er
 		gateKey:         deriveGateKey(gateSecret),
 	}
 	if len(s.allowedUploadTypes) == 0 {
-		s.allowedUploadTypes = []string{"zip"}
+		s.allowedUploadTypes = config.DefaultUploadTypes
 	}
 
 	// Hub registry + poster-set cache. The cache's build fetches the member-tree

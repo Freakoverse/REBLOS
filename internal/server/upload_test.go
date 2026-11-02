@@ -166,6 +166,7 @@ func put(t *testing.T, srv *Server, body []byte, auth string) *httptest.Response
 func TestUpload_HappyPath(t *testing.T) {
 	fs := &fakeStorage{stored: map[string][]byte{}}
 	srv := testServer(t, fs)
+	srv.allowedUploadTypes = []string{"*"} // this test exercises the mechanics, not the type gate
 
 	zipBytes := makeZip(t)
 	sum := hex.EncodeToString(sha256Sum(zipBytes))
@@ -202,13 +203,29 @@ func TestUpload_HashMismatch(t *testing.T) {
 	}
 }
 
-func TestUpload_NotZip(t *testing.T) {
+func TestUpload_DisallowedType(t *testing.T) {
 	srv := testServer(t, &fakeStorage{stored: map[string][]byte{}})
-	body := []byte("i am not a zip file, i am plain text")
+	srv.allowedUploadTypes = []string{"png"} // images only
+	// Opaque binary (NUL bytes, no magic) classifies as "bin" and is rejected.
+	body := []byte{0x00, 0x01, 0x02, 0x00, 0xff, 0x00}
 	sum := hex.EncodeToString(sha256Sum(body))
 	sk := nostr.GeneratePrivateKey()
 	if w := put(t, srv, body, authHeader(t, sk, sum)); w.Code != http.StatusUnsupportedMediaType {
 		t.Fatalf("want 415, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestUpload_TextBlobAccepted(t *testing.T) {
+	fs := &fakeStorage{stored: map[string][]byte{}}
+	srv := testServer(t, fs) // default allowlist includes txt
+	body := []byte("tree:" + hex.EncodeToString(sha256Sum([]byte("x"))))
+	sum := hex.EncodeToString(sha256Sum(body))
+	sk := nostr.GeneratePrivateKey()
+	if w := put(t, srv, body, authHeader(t, sk, sum)); w.Code != http.StatusOK {
+		t.Fatalf("member-tree text blob should upload: want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if got := fs.stored[sum+".txt"]; !bytes.Equal(got, body) {
+		t.Fatal("text blob not stored under .txt")
 	}
 }
 

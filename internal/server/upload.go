@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nbd-wtf/go-nostr"
 	"github.com/nbd-wtf/go-nostr/nip13"
@@ -91,21 +92,53 @@ func (s *Server) verifyUploadAuth(evt *nostr.Event) (hash string, err error) {
 
 // ── upload type validation ───────────────────────────────────────────────────
 
-// uploadMagic maps a file's leading bytes to an extension + content-type. Order
-// matters (longer/more-specific prefixes first). Unmatched files are "bin".
+// uploadMagic maps a file's leading bytes (optionally at a fixed offset) to an
+// extension + content-type. Order matters (longer/more-specific prefixes first).
 type uploadMagic struct {
+	at     int // byte offset the prefix starts at (0 for most formats)
 	prefix []byte
 	ext    string
 	ctype  string
 }
 
-var uploadMagics = []uploadMagic{
-	{[]byte("PK\x03\x04"), "zip", "application/zip"},
-	{[]byte("Rar!\x1a\x07"), "rar", "application/vnd.rar"},
-	{[]byte("7z\xbc\xaf\x27\x1c"), "7z", "application/x-7z-compressed"},
-	{[]byte("\x1f\x8b"), "gz", "application/gzip"},
-	{[]byte("MZ"), "exe", "application/vnd.microsoft.portable-executable"},
+func (m uploadMagic) match(b []byte) bool {
+	if len(b) < m.at+len(m.prefix) {
+		return false
+	}
+	return bytes.HasPrefix(b[m.at:], m.prefix)
 }
+
+var uploadMagics = []uploadMagic{
+	// Archives / executables (not in the default allowlist; opt-in via allowed_types).
+	{prefix: []byte("PK\x03\x04"), ext: "zip", ctype: "application/zip"},
+	{prefix: []byte("Rar!\x1a\x07"), ext: "rar", ctype: "application/vnd.rar"},
+	{prefix: []byte("7z\xbc\xaf\x27\x1c"), ext: "7z", ctype: "application/x-7z-compressed"},
+	{prefix: []byte("\x1f\x8b"), ext: "gz", ctype: "application/gzip"},
+	{prefix: []byte("MZ"), ext: "exe", ctype: "application/vnd.microsoft.portable-executable"},
+	// Images.
+	{prefix: []byte("\x89PNG\r\n\x1a\n"), ext: "png", ctype: "image/png"},
+	{prefix: []byte("\xff\xd8\xff"), ext: "jpg", ctype: "image/jpeg"},
+	{prefix: []byte("GIF87a"), ext: "gif", ctype: "image/gif"},
+	{prefix: []byte("GIF89a"), ext: "gif", ctype: "image/gif"},
+	{at: 8, prefix: []byte("WEBP"), ext: "webp", ctype: "image/webp"}, // RIFF....WEBP
+	{prefix: []byte("BM"), ext: "bmp", ctype: "image/bmp"},
+	// Audio.
+	{prefix: []byte("ID3"), ext: "mp3", ctype: "audio/mpeg"},
+	{prefix: []byte("\xff\xfb"), ext: "mp3", ctype: "audio/mpeg"},
+	{prefix: []byte("OggS"), ext: "ogg", ctype: "audio/ogg"},
+	{prefix: []byte("fLaC"), ext: "flac", ctype: "audio/flac"},
+	{at: 8, prefix: []byte("WAVE"), ext: "wav", ctype: "audio/wav"}, // RIFF....WAVE
+	// Video.
+	{prefix: []byte("\x1aE\xdf\xa3"), ext: "webm", ctype: "video/webm"}, // matroska/webm
+	{at: 4, prefix: []byte("ftyp"), ext: "mp4", ctype: "video/mp4"},     // ISO-BMFF (mp4/mov/m4a)
+	// Documents.
+	{prefix: []byte("%PDF-"), ext: "pdf", ctype: "application/pdf"},
+}
+
+// sniffLen is how much of a blob we read to detect its type. Enough for every
+// magic above and a solid UTF-8/text sample, bounded so a huge binary without a
+// magic isn't read in full.
+const sniffLen = 16 << 10
 
 func (s *Server) uploadTypeAllowed(ext string) bool {
 	for _, t := range s.allowedUploadTypes {
@@ -116,22 +149,31 @@ func (s *Server) uploadTypeAllowed(ext string) bool {
 	return false
 }
 
-// classifyUpload detects the spooled file's type from its magic bytes, enforces
-// the configured allow-list, and (for zips) still rejects encrypted archives.
-// Returns the extension + content-type to store it under.
+// classifyUpload detects the spooled file's type from its magic bytes — and, with
+// no magic match, whether it is UTF-8 text (the hub member-tree / struct blobs are
+// text/plain) — then enforces the configured allow-list. The client's declared
+// Content-Type is never trusted; only the bytes decide. Returns the extension +
+// content-type to store the blob under.
 func (s *Server) classifyUpload(f *os.File) (ext, ctype string, err error) {
 	if _, e := f.Seek(0, io.SeekStart); e != nil {
 		return "", "", e
 	}
-	var head [16]byte
-	n, _ := io.ReadFull(f, head[:])
-	b := head[:n]
+	buf := make([]byte, sniffLen)
+	n, _ := io.ReadFull(f, buf) // short reads (EOF/ErrUnexpectedEOF) are expected and fine
+	b := buf[:n]
 
-	ext, ctype = "bin", "application/octet-stream"
+	ext, ctype = "", ""
 	for _, m := range uploadMagics {
-		if bytes.HasPrefix(b, m.prefix) {
+		if m.match(b) {
 			ext, ctype = m.ext, m.ctype
 			break
+		}
+	}
+	if ext == "" { // no binary magic: text/plain if it sniffs as UTF-8 text, else opaque
+		if looksTextual(b) {
+			ext, ctype = "txt", "text/plain"
+		} else {
+			ext, ctype = "bin", "application/octet-stream"
 		}
 	}
 	if !s.uploadTypeAllowed(ext) {
@@ -142,6 +184,26 @@ func (s *Server) classifyUpload(f *os.File) (ext, ctype string, err error) {
 		return "", "", errors.New("encrypted zip archives are not accepted")
 	}
 	return ext, ctype, nil
+}
+
+// looksTextual reports whether a sample is UTF-8 text with no NUL bytes. An empty
+// blob counts as text. A sample cut mid-rune at the boundary is tolerated by
+// trimming up to 3 trailing bytes before the final UTF-8 check.
+func looksTextual(b []byte) bool {
+	if len(b) == 0 {
+		return true
+	}
+	if bytes.IndexByte(b, 0x00) >= 0 {
+		return false
+	}
+	if !utf8.Valid(b) {
+		t := b
+		for i := 0; i < 3 && len(t) > 0 && !utf8.Valid(t); i++ {
+			t = t[:len(t)-1]
+		}
+		return utf8.Valid(t)
+	}
+	return true
 }
 
 // ── http helpers ─────────────────────────────────────────────────────────────

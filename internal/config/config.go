@@ -77,9 +77,22 @@ type Upload struct {
 	MinFreeDiskMB     int64  `yaml:"min_free_disk_mb"`     // refuse uploads below this free space (default 1024)
 	IdleTimeoutSec    int    `yaml:"idle_timeout_sec"`     // abort an upload after this many seconds with no data (default 60)
 	MinUploadRateKBps int    `yaml:"min_upload_rate_kbps"` // abort an upload averaging below this over a 5s window (default 50; negative = off)
-	// Accepted file extensions, detected by magic bytes (default ["zip"]). Use
-	// ["*"] to allow any type. Recognised: zip, rar, 7z, gz, tar, exe (others → bin).
+	// Accepted file extensions, detected by magic bytes / text sniffing (default
+	// DefaultUploadTypes — text plus common image/audio/video). Use ["*"] to allow
+	// any type. `txt` MUST stay allowed or hubs cannot store their member tree.
 	AllowedTypes []string `yaml:"allowed_types"`
+}
+
+// DefaultUploadTypes is the out-of-the-box upload allowlist for a NIP-CHAT node:
+// text (the member-tree / struct blobs, which are text/plain) plus the common web
+// media a hub's messages carry. Archives/executables are NOT accepted by default;
+// add them to allowed_types if a deployment needs them.
+var DefaultUploadTypes = []string{
+	"txt",
+	"png", "jpg", "gif", "webp", "bmp", // images
+	"mp3", "ogg", "wav", "flac", // audio
+	"mp4", "webm", // video
+	"pdf",
 }
 
 type R2 struct {
@@ -157,7 +170,7 @@ func Load(path string) (*Config, error) {
 		c.Upload.MinUploadRateKBps = 50
 	}
 	if len(c.Upload.AllowedTypes) == 0 {
-		c.Upload.AllowedTypes = []string{"zip"}
+		c.Upload.AllowedTypes = DefaultUploadTypes
 	}
 	if c.Download.ChallengeTTL == 0 {
 		c.Download.ChallengeTTL = 600

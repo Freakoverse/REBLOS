@@ -21,7 +21,10 @@ upload:
   max_size_mb: 500
   max_concurrent: 4
   min_free_disk_mb: 1024
-  allowed_types: ["zip"]                  # accepted file types (magic-detected). ["*"] = any; e.g. ["zip", "rar", "7z"]
+  # Accepted upload types (magic-detected / text-sniffed). Omit to use the default
+  # (text + common image/audio/video). "txt" MUST stay for hub member trees. ["*"]
+  # = any; add "zip"/"rar"/"7z"/"exe"/"gz" to also accept archives/binaries.
+  # allowed_types: ["txt", "png", "jpg", "gif", "webp", "mp4", "webm", "mp3"]
 
 relay:
   # YOUR npub, not DEG Mods'. Two powers: the NIP-86 management API
