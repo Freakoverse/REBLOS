@@ -73,11 +73,16 @@ func main() {
 		slog.Info("announce enabled", "relays", len(cfg.Announce.Relays), "interval_hours", cfg.Announce.IntervalHours)
 	}
 
-	// Ingest: mirror mod events from other relays into this node's store (opt-in).
+	// Ingest: interim global mirror of accepted NIP-CHAT events from a relay set
+	// (opt-in; superseded by the per-hub sync watcher below for durability).
 	if cfg.Ingest.Enabled && len(cfg.Ingest.Relays) > 0 {
 		go srv.RunIngest(ctx, cfg.Ingest.Relays)
 		slog.Info("ingest enabled", "relays", len(cfg.Ingest.Relays))
 	}
+
+	// Per-hub sync watcher: re-pull each whitelisted hub's 36942 from its own relay
+	// hints and mirror its member tree locally, so nothing is lost on downtime.
+	go srv.RunHubRefresh(ctx, 0)
 
 	// Prune spent NIP-09 deletion events (their effect is persisted separately).
 	go srv.RunDeletionSweep(ctx)

@@ -155,7 +155,9 @@ func New(cfg *config.Config, st storage.Storage, gateSecret string) (*Server, er
 	// mandatory sha256 verification, and parses the plaintext leaf pages.
 	s.hubs = hub.LoadRegistry(filepath.Join(cfg.DataDir, "hubs.json"))
 	s.posters = hub.NewPosterCache(func(ctx context.Context, indexHash string, remotes []string) (hub.PosterSet, error) {
-		f := &hub.Fetcher{Local: st, Remotes: remotes}
+		// Mirror: a member-tree blob fetched from a hub's remote Blossom is stored
+		// locally, so building a poster set also makes the member tree durable here.
+		f := &hub.Fetcher{Local: st, Remotes: remotes, Mirror: s.mirrorHubBlob}
 		return hub.BuildPosterSet(indexHash, f.Bind(ctx))
 	})
 

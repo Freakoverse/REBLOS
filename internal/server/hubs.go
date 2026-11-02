@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"log/slog"
@@ -54,6 +55,32 @@ func parseHubEventMeta(ev *nostr.Event) (meta hubEventMeta, ok bool) {
 // hubCoordinate is "36942:<pubkey>:<dTag>".
 func hubCoordinate(pubkey, dTag string) string {
 	return strconv.Itoa(hub.Kind) + ":" + pubkey + ":" + dTag
+}
+
+// mirrorHubBlob stores a member-tree blob fetched from a hub's remote Blossom into
+// local storage, so the member tree survives here even if the origin servers drop
+// it (REBLOS-MIGRATION §6). Best-effort: member-tree blobs are text/plain, and the
+// hash is already verified by the fetcher. Skips a blob that is already stored.
+func (s *Server) mirrorHubBlob(ctx context.Context, sha256hex string, b []byte) {
+	if ok, err := s.storage.Has(ctx, sha256hex, ""); err == nil && ok {
+		return
+	}
+	if err := s.storage.Store(ctx, sha256hex, "txt", "text/plain", bytes.NewReader(b), int64(len(b))); err != nil {
+		slog.Warn("mirror hub blob failed", "hash", sha256hex, "err", err)
+		return
+	}
+	slog.Info("mirrored hub blob", "hash", sha256hex, "bytes", len(b))
+}
+
+// relayHintsOf returns the general relay URLs advertised in a hub event's `r` tags.
+func relayHintsOf(ev *nostr.Event) []string {
+	var out []string
+	for _, t := range ev.Tags {
+		if len(t) >= 2 && t[0] == "r" && t[1] != "" {
+			out = append(out, t[1])
+		}
+	}
+	return out
 }
 
 // reconcileHubEvent rebuilds a whitelisted hub's poster set from the member tree
