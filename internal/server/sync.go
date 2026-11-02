@@ -78,6 +78,40 @@ func (s *Server) refreshHub(ctx context.Context, h *hub.Hub) {
 
 	// 2. Pull the hub's content events (member-gated on store).
 	s.syncHubContent(ctx, relays, h)
+
+	// 3. Mirror the hub's structural blobs (index, leaf pages, spine, history,
+	//    struct) from its Blossom hints, so the full member tree survives here.
+	if cur := s.latestHubEvent(ctx, h.Pubkey, h.DTag); cur != nil {
+		if meta, ok := parseHubEventMeta(cur); ok {
+			s.mirrorHubBlobs(ctx, meta.IndexHash, meta.StructHash, meta.BlossomServers)
+		}
+	}
+}
+
+// mirrorHubBlobs ensures every structural blob a hub references is in local
+// storage: it fetches the index, parses it, and fetches each referenced blob
+// (leaf pages / tree, spine, history) plus the struct blob through a mirroring
+// fetcher — local-first, so an already-stored blob is a no-op and a missing one is
+// pulled from the hub's Blossom hints (sha256-verified) and stored.
+func (s *Server) mirrorHubBlobs(ctx context.Context, indexHash, structHash string, remotes []string) {
+	if indexHash == "" || len(remotes) == 0 {
+		return // nothing to pull, or nowhere to pull from
+	}
+	f := &hub.Fetcher{Local: s.storage, Remotes: remotes, Mirror: s.mirrorHubBlob}
+	idxText, err := f.Fetch(ctx, indexHash)
+	if err != nil {
+		return
+	}
+	hashes := hub.ParseIndex(idxText).AllBlobHashes()
+	if structHash != "" {
+		hashes = append(hashes, structHash)
+	}
+	for _, h := range hashes {
+		if ctx.Err() != nil {
+			return
+		}
+		_, _ = f.Fetch(ctx, h) // local hit = no-op; remote hit mirrors via the hook
+	}
 }
 
 // syncHubContent fetches the hub's member-authored events from its relays and

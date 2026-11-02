@@ -50,6 +50,7 @@ type Index struct {
 	SpineHash string        // paginated only
 	TreeHash  string        // monolithic only
 	LeafPages []LeafPageRef // paginated only
+	History   string        // optional history-log blob hash
 }
 
 // Paginated reports whether this is a paginated index (has leaf pages / a spine).
@@ -105,9 +106,26 @@ func ParseIndex(content string) Index {
 			}
 		case strings.HasPrefix(t, "tree:"):
 			ix.TreeHash = t[len("tree:"):]
+		case strings.HasPrefix(t, "history:"):
+			ix.History = t[len("history:"):]
 		}
 	}
 	return ix
+}
+
+// AllBlobHashes returns every content-addressed blob the index references for
+// durability mirroring: the member-tree blobs (leaf pages, or the monolithic
+// tree) plus the spine and history-log blobs when present. The index's own hash
+// is known by the caller and not included.
+func (ix Index) AllBlobHashes() []string {
+	out := ix.MemberBlobHashes()
+	if ix.SpineHash != "" {
+		out = append(out, ix.SpineHash)
+	}
+	if ix.History != "" {
+		out = append(out, ix.History)
+	}
+	return out
 }
 
 // ScanMembers extracts members from any member-tree blob (a monolithic tree or a

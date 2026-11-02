@@ -20,6 +20,7 @@ type hubEventMeta struct {
 	DTag           string
 	IndexHash      string   // from the `m` tag
 	Epoch          int      // from the `m` tag's third element
+	StructHash     string   // from the `struct` tag (the encrypted hub-config blob), "" if none
 	BlossomServers []string // from `o` tags
 }
 
@@ -46,6 +47,8 @@ func parseHubEventMeta(ev *nostr.Event) (meta hubEventMeta, ok bool) {
 			if t[1] != "" {
 				meta.BlossomServers = append(meta.BlossomServers, t[1])
 			}
+		case "struct":
+			meta.StructHash = t[1]
 		}
 	}
 	ok = meta.DTag != "" && meta.IndexHash != ""

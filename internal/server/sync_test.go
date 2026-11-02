@@ -116,6 +116,46 @@ func TestStoreEvent_RoutesByKind(t *testing.T) {
 	}
 }
 
+// mirrorHubBlobs pulls the full structural set (index + leaf pages + spine +
+// history + struct) from a remote Blossom into local storage.
+func TestMirrorHubBlobs(t *testing.T) {
+	fs := &fakeStorage{stored: map[string][]byte{}}
+	srv := testServer(t, fs)
+	ctx := context.Background()
+
+	member := key(t)
+	page := "leaf:n0:" + member + ":everyone:AA==?iv=BB=="
+	spine := "page-root:r0:n0:n0:CC==:CC=="
+	history := "history-log-contents"
+	structBlob := "encrypted-struct-blob-base64"
+	pageH, spineH, histH, structH := sha256hex(page), sha256hex(spine), sha256hex(history), sha256hex(structBlob)
+	index := strings.Join([]string{
+		"meta:page_size=10000",
+		"spine:" + spineH,
+		"leaf-page:0:" + member + ":" + pageH,
+		"history:" + histH,
+	}, "\n")
+	indexH := sha256hex(index)
+
+	blobs := map[string]string{indexH: index, pageH: page, spineH: spine, histH: history, structH: structBlob}
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if b, ok := blobs[strings.TrimPrefix(r.URL.Path, "/")]; ok {
+			_, _ = w.Write([]byte(b))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer remote.Close()
+
+	srv.mirrorHubBlobs(ctx, indexH, structH, []string{remote.URL})
+
+	for name, h := range map[string]string{"index": indexH, "leaf": pageH, "spine": spineH, "history": histH, "struct": structH} {
+		if _, ok := fs.stored[h+".txt"]; !ok {
+			t.Errorf("%s blob (%s) was not mirrored to local storage", name, h)
+		}
+	}
+}
+
 func TestMergeRelays(t *testing.T) {
 	got := mergeRelays([]string{"wss://a", "wss://b"}, []string{"wss://b", "wss://c", ""})
 	want := []string{"wss://a", "wss://b", "wss://c"}

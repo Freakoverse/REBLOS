@@ -21,6 +21,7 @@ func TestParseHubEventMeta(t *testing.T) {
 			{"o", "https://blossom1.example"},
 			{"o", "https://blossom2.example", "dedicated"},
 			{"m", "indexhash123", "7"},
+			{"struct", "structhash456", "7"},
 			{"epoch", "7"},
 		},
 	}
@@ -30,6 +31,9 @@ func TestParseHubEventMeta(t *testing.T) {
 	}
 	if meta.DTag != "my-hub" || meta.IndexHash != "indexhash123" || meta.Epoch != 7 {
 		t.Errorf("meta = %+v", meta)
+	}
+	if meta.StructHash != "structhash456" {
+		t.Errorf("struct hash = %q", meta.StructHash)
 	}
 	if len(meta.BlossomServers) != 2 ||
 		meta.BlossomServers[0] != "https://blossom1.example" ||

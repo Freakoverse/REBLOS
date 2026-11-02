@@ -79,6 +79,31 @@ func TestParseIndexPaginated(t *testing.T) {
 	}
 }
 
+func TestAllBlobHashes(t *testing.T) {
+	paginated := ParseIndex(strings.Join([]string{
+		"meta:page_size=10000",
+		"spine:spineH",
+		"leaf-page:0:" + pkB + ":page0",
+		"leaf-page:1:" + pkA + ":page1",
+		"history:histH",
+	}, "\n"))
+	got := paginated.AllBlobHashes()
+	want := []string{"page0", "page1", "spineH", "histH"}
+	if len(got) != len(want) {
+		t.Fatalf("paginated AllBlobHashes = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("paginated AllBlobHashes = %v, want %v", got, want)
+		}
+	}
+
+	mono := ParseIndex("tree:theTree\nhistory:histH")
+	if got := mono.AllBlobHashes(); len(got) != 2 || got[0] != "theTree" || got[1] != "histH" {
+		t.Fatalf("monolithic AllBlobHashes = %v", got)
+	}
+}
+
 func TestParseIndexMonolithic(t *testing.T) {
 	// Mirrors createIndexFile.
 	content := strings.Join([]string{
