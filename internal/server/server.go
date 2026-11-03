@@ -84,6 +84,14 @@ type Server struct {
 	syncR      *syncRelays
 	backfillMu sync.Mutex
 	backfilled map[string]bool
+
+	// Storage re-routing (§4): the Multi backend (non-nil only when a read-fallback
+	// is configured) and the migration tracker for copying the fallback's backlog
+	// into the primary.
+	storageMulti    *storage.Multi
+	migration       *migrationState
+	storagePrimary  backendDesc
+	storageFallback *backendDesc // nil when no read-fallback is configured
 }
 
 // New builds the node's HTTP handler (streaming upload + blossom + relay).
@@ -169,6 +177,15 @@ func New(cfg *config.Config, st storage.Storage, gateSecret string) (*Server, er
 		s.allowedUploadTypes = config.DefaultUploadTypes
 	}
 	srv = s // the LoadBlob closure's mirror-on-read fallback can now reach the Server
+	if m, ok := st.(*storage.Multi); ok {
+		s.storageMulti = m // a read-fallback is configured; migration + status can use it
+	}
+	s.migration = newMigrationState()
+	s.storagePrimary = describeBackend(cfg.Backend, cfg.R2, cfg.S3, cfg.Disk)
+	if cfg.Fallback.Backend != "" {
+		d := describeBackend(cfg.Fallback.Backend, cfg.Fallback.R2, cfg.Fallback.S3, cfg.Fallback.Disk)
+		s.storageFallback = &d
+	}
 
 	// Hub registry + poster-set cache. The cache's build fetches the member-tree
 	// blobs local-first (our own storage) then from the hub's Blossom hints, with
@@ -232,6 +249,8 @@ func New(cfg *config.Config, st storage.Storage, gateSecret string) (*Server, er
 	mux.HandleFunc("POST /admin/sync-relays", s.handleAdminSyncRelaysAdd)
 	mux.HandleFunc("PUT /admin/sync-relays", s.handleAdminSyncRelaysSet)
 	mux.HandleFunc("DELETE /admin/sync-relays", s.handleAdminSyncRelaysRemove)
+	mux.HandleFunc("GET /admin/storage", s.handleAdminStorageGet)
+	mux.HandleFunc("POST /admin/storage/migrate", s.handleAdminStorageMigrate)
 	mux.HandleFunc("OPTIONS /admin/{rest...}", func(w http.ResponseWriter, r *http.Request) {
 		setAdminCORS(w)
 		w.WriteHeader(http.StatusNoContent)

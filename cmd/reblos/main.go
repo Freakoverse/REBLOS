@@ -89,7 +89,7 @@ func main() {
 		Addr:    cfg.Listen,
 		Handler: srv.Handler(),
 		// Bound the handshake/headers and idle keep-alives, but NOT total read/write
-		// time — large uploads/downloads are legitimately long-running. Per-request
+		// time: large uploads/downloads are legitimately long-running. Per-request
 		// upload idle timeouts are enforced in the streaming handler.
 		ReadHeaderTimeout: 15 * time.Second,
 		IdleTimeout:       120 * time.Second,
@@ -123,29 +123,50 @@ func setupLogging(c *config.Config) {
 	slog.SetDefault(slog.New(h))
 }
 
-// newStorage builds the blob backend selected by cfg.Backend.
+// newStorage builds the blob backend selected by cfg.Backend. When a read-fallback
+// backend is configured (storage re-routing), it wraps the primary and the fallback
+// in a storage.Multi: writes go to the primary, reads fall through to the fallback.
 func newStorage(cfg *config.Config) (storage.Storage, error) {
-	switch cfg.Backend {
+	primary, err := buildBackend(cfg.Backend, cfg.R2, cfg.S3, cfg.Disk)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.Fallback.Backend == "" {
+		return primary, nil
+	}
+	fb, err := buildBackend(cfg.Fallback.Backend, cfg.Fallback.R2, cfg.Fallback.S3, cfg.Fallback.Disk)
+	if err != nil {
+		return nil, fmt.Errorf("fallback backend: %w", err)
+	}
+	slog.Info("storage read-fallback enabled", "primary", cfg.Backend, "fallback", cfg.Fallback.Backend)
+	return storage.NewMulti(primary, fb), nil
+}
+
+// buildBackend constructs one backend by its kind.
+func buildBackend(backend string, r2 config.R2, s3 config.S3, disk config.Disk) (storage.Storage, error) {
+	switch backend {
 	case "s3":
 		return storage.NewR2(storage.R2Config{
-			Endpoint:  cfg.S3.Endpoint,
-			Region:    cfg.S3.Region,
-			Bucket:    cfg.S3.Bucket,
-			AccessKey: cfg.S3.AccessKey,
-			SecretKey: cfg.S3.SecretKey,
-			UseSSL:    cfg.S3.UseSSL,
-			PathStyle: cfg.S3.PathStyle,
+			Endpoint:  s3.Endpoint,
+			Region:    s3.Region,
+			Bucket:    s3.Bucket,
+			AccessKey: s3.AccessKey,
+			SecretKey: s3.SecretKey,
+			UseSSL:    s3.UseSSL,
+			PathStyle: s3.PathStyle,
 		})
 	case "disk":
-		return storage.NewDisk(cfg.Disk.Path)
-	default: // "r2"
+		return storage.NewDisk(disk.Path)
+	case "r2", "":
 		return storage.NewR2(storage.R2Config{
-			Endpoint:  cfg.R2.Endpoint,
-			Region:    cfg.R2.Region,
-			Bucket:    cfg.R2.Bucket,
-			AccessKey: cfg.R2.AccessKey,
-			SecretKey: cfg.R2.SecretKey,
-			UseSSL:    cfg.R2.UseSSL,
+			Endpoint:  r2.Endpoint,
+			Region:    r2.Region,
+			Bucket:    r2.Bucket,
+			AccessKey: r2.AccessKey,
+			SecretKey: r2.SecretKey,
+			UseSSL:    r2.UseSSL,
 		})
+	default:
+		return nil, fmt.Errorf("unknown backend %q", backend)
 	}
 }

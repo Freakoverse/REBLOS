@@ -29,6 +29,18 @@ s3:                                      # self-hosted S3 (MinIO / Garage / Ceph
 disk:
   path: "/app/data/blobs"                # blob root when backend is "disk"
 
+# Optional read-fallback backend, for re-routing storage WITHOUT losing blobs.
+# Set its backend to your OLD store and the primary above to the NEW one, restart
+# (reads fall through to the fallback), then run the migration (dashboard Storage
+# tab) to copy the backlog into the primary, and finally remove this block. Its
+# secrets come from FALLBACK_R2_ACCESS_KEY / FALLBACK_R2_SECRET_KEY (or FALLBACK_S3_*).
+# fallback:
+#   backend: "r2"
+#   r2:
+#     endpoint: "<old-accountid>.r2.cloudflarestorage.com"
+#     bucket: "old-bucket"
+#     use_ssl: true
+
 upload:
   max_size_mb: 500
   max_concurrent: 4

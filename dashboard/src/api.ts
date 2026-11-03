@@ -328,6 +328,49 @@ export async function removeSyncRelay(url: string): Promise<void> {
   if (!res.ok) throw new Error(await reason(res))
 }
 
+// ─── Storage re-routing (durability §4) ─────────────────────────────
+
+export interface BackendDesc {
+  kind: string // r2 | s3 | disk
+  endpoint?: string
+  bucket?: string
+  path?: string
+}
+export interface MigrationProgress {
+  total: number
+  copied: number
+  skipped: number
+  failed: number
+  done: boolean
+  err?: string
+}
+export interface StorageInfo {
+  primary: BackendDesc
+  /** The read-fallback backend, or null when none is configured. */
+  fallback: BackendDesc | null
+  blob_count: number
+  blob_bytes: number
+  disk: { available: boolean; total_mb?: number; used_mb?: number; free_mb?: number }
+  migration: {
+    running: boolean
+    progress: MigrationProgress
+    started_at?: number
+    finished_at?: number
+  }
+}
+
+export async function getStorage(): Promise<StorageInfo> {
+  const res = await adminFetch('/admin/storage', 'GET')
+  if (!res.ok) throw new Error(await reason(res))
+  return res.json()
+}
+
+/** Start copying the read-fallback backend's blobs into the primary. */
+export async function startStorageMigration(): Promise<void> {
+  const res = await adminFetch('/admin/storage/migrate', 'POST')
+  if (!res.ok) throw new Error(await reason(res))
+}
+
 // ─── Node runtime stats ─────────────────────────────────────────────
 
 export interface NodeStats {

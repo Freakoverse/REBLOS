@@ -18,6 +18,7 @@ type Config struct {
 	R2        R2       `yaml:"r2"`
 	S3        S3       `yaml:"s3"`
 	Disk      Disk     `yaml:"disk"`
+	Fallback  Fallback `yaml:"fallback"`
 	Upload    Upload   `yaml:"upload"`
 	Relay     Relay    `yaml:"relay"`
 	Download  Download `yaml:"download"`
@@ -149,6 +150,20 @@ type Disk struct {
 	Path string `yaml:"path"` // blob root; default "<data_dir>/blobs"
 }
 
+// Fallback is a second, read-only backend kept alongside the primary while
+// re-routing storage (REBLOS-MIGRATION §4). When Backend is set, the node reads the
+// primary first then this backend, so blobs not yet migrated off the old backend are
+// still served; new writes go only to the primary. Run a migration (admin API /
+// dashboard Storage tab) to copy the backlog into the primary, then clear this.
+// Its secrets come from FALLBACK_R2_ACCESS_KEY / FALLBACK_R2_SECRET_KEY (or the
+// FALLBACK_S3_* pair), keeping them out of the file like the primary's.
+type Fallback struct {
+	Backend string `yaml:"backend"` // "" (none), "r2", "s3", or "disk"
+	R2      R2     `yaml:"r2"`
+	S3      S3     `yaml:"s3"`
+	Disk    Disk   `yaml:"disk"`
+}
+
 // Load reads and validates config. Env vars R2_ACCESS_KEY / R2_SECRET_KEY
 // override the file so secrets can stay out of it.
 func Load(path string) (*Config, error) {
@@ -227,6 +242,18 @@ func Load(path string) (*Config, error) {
 	if v := os.Getenv("S3_SECRET_KEY"); v != "" {
 		c.S3.SecretKey = v
 	}
+	if v := os.Getenv("FALLBACK_R2_ACCESS_KEY"); v != "" {
+		c.Fallback.R2.AccessKey = v
+	}
+	if v := os.Getenv("FALLBACK_R2_SECRET_KEY"); v != "" {
+		c.Fallback.R2.SecretKey = v
+	}
+	if v := os.Getenv("FALLBACK_S3_ACCESS_KEY"); v != "" {
+		c.Fallback.S3.AccessKey = v
+	}
+	if v := os.Getenv("FALLBACK_S3_SECRET_KEY"); v != "" {
+		c.Fallback.S3.SecretKey = v
+	}
 
 	if c.PublicURL == "" {
 		return nil, fmt.Errorf("config: public_url required")
@@ -251,5 +278,55 @@ func Load(path string) (*Config, error) {
 	default:
 		return nil, fmt.Errorf("config: unknown backend %q (want r2, s3, or disk)", c.Backend)
 	}
+
+	// Optional read-fallback backend (used while re-routing storage).
+	if c.Fallback.Backend != "" {
+		if c.Fallback.R2.Region == "" {
+			c.Fallback.R2.Region = "auto"
+		}
+		if c.Fallback.S3.Region == "" {
+			c.Fallback.S3.Region = "us-east-1"
+		}
+		switch c.Fallback.Backend {
+		case "r2":
+			if c.Fallback.R2.Endpoint == "" || c.Fallback.R2.Bucket == "" {
+				return nil, fmt.Errorf("config: fallback.r2.endpoint and fallback.r2.bucket required")
+			}
+			if c.Fallback.R2.AccessKey == "" || c.Fallback.R2.SecretKey == "" {
+				return nil, fmt.Errorf("config: fallback r2 credentials required (set FALLBACK_R2_ACCESS_KEY/FALLBACK_R2_SECRET_KEY)")
+			}
+		case "s3":
+			if c.Fallback.S3.Endpoint == "" || c.Fallback.S3.Bucket == "" {
+				return nil, fmt.Errorf("config: fallback.s3.endpoint and fallback.s3.bucket required")
+			}
+			if c.Fallback.S3.AccessKey == "" || c.Fallback.S3.SecretKey == "" {
+				return nil, fmt.Errorf("config: fallback s3 credentials required (set FALLBACK_S3_ACCESS_KEY/FALLBACK_S3_SECRET_KEY)")
+			}
+		case "disk":
+			if c.Fallback.Disk.Path == "" {
+				return nil, fmt.Errorf("config: fallback.disk.path required")
+			}
+		default:
+			return nil, fmt.Errorf("config: unknown fallback.backend %q (want r2, s3, or disk)", c.Fallback.Backend)
+		}
+		if c.Fallback.Backend == c.Backend && sameBackendTarget(&c) {
+			return nil, fmt.Errorf("config: fallback must point at a different location than the primary")
+		}
+	}
 	return &c, nil
+}
+
+// sameBackendTarget reports whether the fallback resolves to the same physical
+// location as the primary (which would make a migration a no-op loop). Only a rough
+// guard on the obvious same-bucket / same-path mistake.
+func sameBackendTarget(c *Config) bool {
+	switch c.Backend {
+	case "r2":
+		return c.R2.Endpoint == c.Fallback.R2.Endpoint && c.R2.Bucket == c.Fallback.R2.Bucket
+	case "s3":
+		return c.S3.Endpoint == c.Fallback.S3.Endpoint && c.S3.Bucket == c.Fallback.S3.Bucket
+	case "disk":
+		return c.Disk.Path == c.Fallback.Disk.Path
+	}
+	return false
 }

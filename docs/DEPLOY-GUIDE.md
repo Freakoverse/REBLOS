@@ -342,6 +342,7 @@ Everything lives in `config.yml` (secrets in `.env`). The knobs you're most like
 |---|---|
 | `public_url` | your hostname, **what the node announces**; must be correct |
 | `backend` + `disk`/`r2`/`s3` | where blobs are stored |
+| `fallback` | optional read-fallback backend for re-routing storage without losing blobs (see below) |
 | `relay.admin_npub` | the key allowed to manage the node (dashboard + NIP-86) |
 | `relay.min_event_pow` | NIP-13 PoW required on accepted events (0 = off) |
 | `relay.extra_kinds` | extra event kinds to accept beyond the NIP-CHAT set (not member-gated) |
@@ -354,6 +355,25 @@ Everything lives in `config.yml` (secrets in `.env`). The knobs you're most like
 
 After any config change: `docker compose up -d --force-recreate node`, then check the
 startup log to confirm it took effect.
+
+---
+
+## 12. Re-routing storage later (no data loss)
+
+To move blobs from one backend to another (say disk to R2, or one bucket to another)
+without losing anything:
+
+1. In `config.yml`, set `backend` (and its block) to the **new** store, and add a
+   `fallback` block pointing at the **old** store. Put the old store's credentials in
+   `.env` as `FALLBACK_R2_ACCESS_KEY` / `FALLBACK_R2_SECRET_KEY` (or the `FALLBACK_S3_*`
+   pair). Restart: `docker compose up -d --force-recreate node`.
+   - The node now **writes to the new store and reads from the new store then the old
+     one**, so every blob is still served while nothing has moved yet.
+2. In the dashboard **Storage** tab, click **Migrate fallback into primary**. It copies
+   the old store's blobs into the new one, showing progress. The copy is idempotent, so
+   it is safe to re-run if interrupted.
+3. When it reports done with no failures, remove the `fallback` block and its `.env`
+   secrets and restart. The old store can now be decommissioned.
 
 ---
 

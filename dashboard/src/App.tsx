@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Boxes, HardDrive, ShieldCheck, Settings2, LogOut, Loader2, KeyRound, Flame, Radio, Rss } from 'lucide-react'
+import { Boxes, HardDrive, ShieldCheck, Settings2, LogOut, Loader2, KeyRound, Flame, Radio, Rss, Database } from 'lucide-react'
 import { connect, hasExtension, npubEncode } from './nostr'
 import { getWhitelist } from './api'
 import { cn, truncateMiddle } from './lib'
@@ -8,17 +8,19 @@ import { FilesTab } from './components/FilesTab'
 import { HubsTab } from './components/HubsTab'
 import { RelayTab } from './components/RelayTab'
 import { SyncRelaysTab } from './components/SyncRelaysTab'
+import { StorageTab } from './components/StorageTab'
 import { WhitelistTab } from './components/WhitelistTab'
 import { SettingsTab } from './components/SettingsTab'
 
 const SESSION_KEY = 'reblos-dashboard:pubkey'
-type Tab = 'hubs' | 'blobs' | 'relay' | 'sync' | 'whitelist' | 'settings'
+type Tab = 'hubs' | 'blobs' | 'relay' | 'sync' | 'storage' | 'whitelist' | 'settings'
 
 const TABS: { id: Tab; label: string; icon: typeof Boxes }[] = [
   { id: 'hubs', label: 'Hubs', icon: Boxes },
   { id: 'blobs', label: 'Files', icon: HardDrive },
   { id: 'relay', label: 'Relay', icon: Radio },
   { id: 'sync', label: 'Sync', icon: Rss },
+  { id: 'storage', label: 'Storage', icon: Database },
   { id: 'whitelist', label: 'Whitelist', icon: ShieldCheck },
   { id: 'settings', label: 'Settings', icon: Settings2 },
 ]
@@ -97,6 +99,7 @@ export function App() {
         {tab === 'blobs' && <FilesTab />}
         {tab === 'relay' && <RelayTab />}
         {tab === 'sync' && <SyncRelaysTab />}
+        {tab === 'storage' && <StorageTab />}
         {tab === 'whitelist' && <WhitelistTab />}
         {tab === 'settings' && <SettingsTab />}
       </div>
