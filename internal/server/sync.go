@@ -18,8 +18,8 @@ const defaultHubRefreshInterval = 15 * time.Minute
 
 // RunHubRefresh is the per-hub sync watcher (REBLOS-MIGRATION §6). On a timer it
 // re-fetches each whitelisted hub's latest 36942 from the hub's own relay hints
-// and reconciles it, so the relay stays current — and, via the poster-cache's
-// mirror hook, pulls the member tree into local storage — even when a revision is
+// and reconciles it, so the relay stays current (and, via the poster-cache's
+// mirror hook, pulls the member tree into local storage) even when a revision is
 // never republished directly here. Pull-only; clients still publish widely via
 // their own failover. Blocks until ctx is cancelled.
 func (s *Server) RunHubRefresh(ctx context.Context, interval time.Duration) {
@@ -102,7 +102,7 @@ func (s *Server) refreshHub(ctx context.Context, h *hub.Hub) {
 // mirrorHubBlobs ensures every structural blob a hub references is in local
 // storage: it fetches the index, parses it, and fetches each referenced blob
 // (leaf pages / tree, spine, history) plus the struct blob through a mirroring
-// fetcher — local-first, so an already-stored blob is a no-op and a missing one is
+// fetcher, local-first, so an already-stored blob is a no-op and a missing one is
 // pulled from the hub's Blossom hints (sha256-verified) and stored.
 func (s *Server) mirrorHubBlobs(ctx context.Context, indexHash, structHash string, remotes []string) {
 	if indexHash == "" || len(remotes) == 0 {
@@ -127,7 +127,7 @@ func (s *Server) mirrorHubBlobs(ctx context.Context, indexHash, structHash strin
 
 // mirrorOnRead lazily pulls a blob that is not stored locally from the whitelisted
 // hubs' Blossom servers, verifies its sha256, classifies it, stores it, and returns
-// a reader — the media-durability half of §6.
+// a reader: the media-durability half of §6.
 //
 // A hub message's attachment hashes live inside AES-encrypted content the relay
 // cannot read, so message media cannot be mirrored proactively the way the member
@@ -209,7 +209,7 @@ func (s *Server) syncHubContent(ctx context.Context, relays []string, h *hub.Hub
 }
 
 // markBackfill returns true the first time it is called for a coordinate in this
-// process, and false afterward — so the deep back-fill runs once per hub per run.
+// process, and false afterward, so the deep back-fill runs once per hub per run.
 func (s *Server) markBackfill(coord string) bool {
 	s.backfillMu.Lock()
 	defer s.backfillMu.Unlock()

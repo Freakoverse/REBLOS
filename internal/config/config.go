@@ -85,7 +85,7 @@ type Relay struct {
 	AdminNpub   string `yaml:"admin_npub"`    // npub allowed to use the NIP-86 management API
 	MinEventPoW int    `yaml:"min_event_pow"` // NIP-13 bits required on accepted events (0 = off)
 	// ExtraKinds are additional event kinds to accept beyond the built-in NIP-CHAT
-	// hub set (hub event, member-content kinds, join requests) — e.g. DM kinds or
+	// hub set (hub event, member-content kinds, join requests), e.g. DM kinds or
 	// a custom kind. They are NOT member-gated; they pass the kind allowlist and
 	// the min_event_pow floor. Hub member/role gating applies only to the built-in
 	// hub-content kinds.
@@ -106,7 +106,7 @@ type Upload struct {
 	IdleTimeoutSec    int    `yaml:"idle_timeout_sec"`     // abort an upload after this many seconds with no data (default 60)
 	MinUploadRateKBps int    `yaml:"min_upload_rate_kbps"` // abort an upload averaging below this over a 5s window (default 50; negative = off)
 	// Accepted file extensions, detected by magic bytes / text sniffing (default
-	// DefaultUploadTypes — text plus common image/audio/video). Use ["*"] to allow
+	// DefaultUploadTypes: text plus common image/audio/video). Use ["*"] to allow
 	// any type. `txt` MUST stay allowed or hubs cannot store their member tree.
 	AllowedTypes []string `yaml:"allowed_types"`
 }

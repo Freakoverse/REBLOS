@@ -98,7 +98,7 @@ func (s *Server) rejectEvent(ctx context.Context, evt *nostr.Event) (bool, strin
 	}
 	// NIP-09 deletion request. khatru applies its effect before this policy runs
 	// (see onDeletionOutcome); accept it so the author gets an OK and the deletion
-	// is retained (briefly — pruned by RunDeletionSweep). Always exempt from the
+	// is retained (briefly, pruned by RunDeletionSweep). Always exempt from the
 	// kind allowlist and PoW: a takedown must never need mining.
 	if evt.Kind == 5 {
 		return false, ""
@@ -238,7 +238,7 @@ func (s *Server) setupRelay(store *badger.BadgerBackend, adminPubkey string) {
 	r.OverwriteDeletionOutcome = append(r.OverwriteDeletionOutcome, s.onDeletionOutcome)
 	// Label blobs against the mods that reference them (dashboard only). This runs
 	// after the event is stored and its return value is ignored, so it can never
-	// reject an event or change what gets persisted — pure observation.
+	// reject an event or change what gets persisted: pure observation.
 	r.OnEventSaved = append(r.OnEventSaved, func(ctx context.Context, evt *nostr.Event) {
 		s.refs.note(evt)
 		// A new hub revision republished here refreshes that hub's poster set live.

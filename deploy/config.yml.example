@@ -1,21 +1,33 @@
-# Node config for the Docker + Caddy deploy. Copy to config.yml and edit.
-# Secrets are NOT here — they come from .env (R2_ACCESS_KEY / R2_SECRET_KEY).
+# REBLOS node config for the Docker + Caddy deploy. Copy to config.yml and edit.
+# Secrets are NOT here: they come from .env (R2_ACCESS_KEY / R2_SECRET_KEY, or
+# S3_ACCESS_KEY / S3_SECRET_KEY). A NIP-CHAT relay + Blossom server for your hubs.
 
 listen: ":3000"                          # Caddy forwards here (container-internal)
-public_url: "https://brs.example.com"    # YOUR public hostname — must change (it's what the node announces)
+public_url: "https://relay.example.com"  # YOUR public hostname, must change (it's what the node announces)
 data_dir: "/app/data"                    # the mounted volume; do not change
 
-backend: "r2"
+backend: "disk"                          # "disk" (blobs on this box), "r2", or "s3"
 
 log:
   level: "info"
   format: "json"                         # structured logs for the server
 
+# Only the block matching `backend` above is used.
 r2:
   endpoint: "<accountid>.r2.cloudflarestorage.com"   # R2 → Settings → S3 API
   region: "auto"
   bucket: "your-blossom-bucket"
   use_ssl: true
+
+s3:                                      # self-hosted S3 (MinIO / Garage / Ceph)
+  endpoint: "garage:3900"                # host[:port], no scheme (a compose service)
+  region: "garage"
+  bucket: "your-blossom-bucket"
+  use_ssl: false                         # internal network, no TLS needed
+  path_style: true                       # most self-hosted S3 servers need this
+
+disk:
+  path: "/app/data/blobs"                # blob root when backend is "disk"
 
 upload:
   max_size_mb: 500
@@ -27,21 +39,22 @@ upload:
   # allowed_types: ["txt", "png", "jpg", "gif", "webp", "mp4", "webm", "mp3"]
 
 relay:
-  # YOUR npub, not DEG Mods'. Two powers: the NIP-86 management API
-  # (ban/allow), and the only key allowed to publish moderation tags
-  # (kind 30985) — tags applied to other people's posts. Leave it empty
-  # and moderation tags are refused from everyone.
+  # YOUR npub. It is the only key allowed to use the NIP-86 management API and the
+  # admin dashboard (whitelist hubs, moderate, manage sync relays). Leave it empty
+  # and the admin surface is closed to everyone.
   admin_npub: "npub1youradminkey"
   min_event_pow: 0
-  # Drop the mod-scoped kind allowlist: accept any kind, from anyone. For a
-  # fork that wants a general-purpose relay. Bans, takedowns and honored
-  # deletions still apply, but the kind scope stops limiting abuse — set
-  # min_event_pow above if you turn this on.
+  # Extra event kinds to accept beyond the built-in NIP-CHAT hub set. NOT member-
+  # gated; they pass the kind allowlist + min_event_pow only. e.g. [1059] for DMs.
+  # extra_kinds: []
+  # Drop the kind allowlist AND the hub member gate: accept any kind, from anyone.
+  # For a general-purpose fork. Bans, takedowns and honored deletions still apply;
+  # set min_event_pow above if you turn this on.
   accept_all_kinds: false
 
 download:
-  # START WITH GATES OFF. Verify read parity + upload first, then turn these on.
-  pow_difficulty: 0                      # e.g. 18–20 to enable the PoW gate
+  # START WITH THE GATE OFF. Verify upload + read first, then turn it on.
+  pow_difficulty: 0                      # e.g. 18-20 to enable the PoW download gate
   challenge_ttl: 600
   trusted_ip_header: "X-Forwarded-For"   # Caddy sets this to the real client IP
 
@@ -49,21 +62,18 @@ announce:
   # Advertise this node over Nostr so other nodes/clients can discover it.
   enabled: true
   interval_hours: 168                    # re-publish weekly (7 days)
-  # Kept the same as ingest.relays so the node uses one relay set (fewer dup conns).
   relays:
     - "wss://relay.primal.net"
     - "wss://nos.lol"
-    - "wss://relay.nostr.band"
-    - "wss://relay.snort.social"
-    - "wss://relay.wellorder.net"
+    - "wss://relay.damus.io"
 
-ingest:
-  # Mirror every mod (31142) + legacy mod (30402 t=GameMod) from these relays into
-  # this node, so it becomes a complete mod DB clients can query in one place.
-  enabled: true
-  relays:
-    - "wss://relay.primal.net"
-    - "wss://nos.lol"
-    - "wss://relay.nostr.band"
-    - "wss://relay.snort.social"
-    - "wss://relay.wellorder.net"
+sync:
+  # Durability sync (REBLOS-MIGRATION §6): per whitelisted hub, pull its events +
+  # Blossom blobs from the hub's OWN relay hints PLUS a curated set of general
+  # relays, member-gated, so nothing is lost on downtime. The general relays are
+  # seeded with sensible defaults and then managed from the dashboard (Sync tab):
+  # toggle a default off or add your own. extra_relays below only SEED the list on
+  # first run; after that the dashboard is the source of truth.
+  interval_minutes: 15
+  extra_relays: []
+    # - "wss://your-extra-relay.example"

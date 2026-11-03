@@ -34,7 +34,7 @@ cat <<'EOF'
   Before continuing, have ready:
     1. A domain or subdomain whose DNS A record ALREADY points at THIS server's
        public IP (if you use Cloudflare DNS, set it to "DNS only" / grey cloud).
-    2. Your admin npub — the Nostr key that will manage this node's dashboard.
+    2. Your admin npub: the Nostr key that will manage this node's dashboard.
     3. If you'll use cloud storage: your Cloudflare R2 or S3 endpoint + keys.
 
 EOF
@@ -59,9 +59,9 @@ esac
 
 echo
 echo "  Storage backend:"
-echo "    1) disk   — blobs on this server's disk (simplest)"
-echo "    2) r2     — Cloudflare R2"
-echo "    3) s3     — self-hosted S3 (MinIO / Garage / Ceph)"
+echo "    1) disk   : blobs on this server's disk (simplest)"
+echo "    2) r2     : Cloudflare R2"
+echo "    3) s3     : self-hosted S3 (MinIO / Garage / Ceph)"
 ask STORAGE "  Choose" "1"
 
 S3_ENDPOINT=""; S3_BUCKET=""; S3_ACCESS=""; S3_SECRET=""; BACKEND="disk"; PATH_STYLE="false"
@@ -212,6 +212,6 @@ cat <<EOF
     docker compose pull && docker compose up -d --build   # update
     docker compose down              # stop
 
-  Back up $DEPLOY/data and $DEPLOY/.env — that is your whole node.
+  Back up $DEPLOY/data and $DEPLOY/.env: that is your whole node.
 
 EOF
