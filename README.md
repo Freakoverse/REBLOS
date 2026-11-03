@@ -6,13 +6,16 @@ whitelisted operator runs to host their NIP-CHAT hubs' events and Blossom files,
 with hub-scoped access rules. Content is addressed by SHA-256 and served from
 pluggable storage (disk / Cloudflare R2 / self-hosted S3).
 
-It is a fork of the DEG Mods Blossom-Relay-Server, being retargeted from game
-mods to NIP-CHAT. See **[docs/REBLOS-MIGRATION.md](docs/REBLOS-MIGRATION.md)** for
-the plan and current status. Parts of this README and the deploy guide below still
-describe the upstream mod-oriented behavior and will be rewritten as the retarget
-lands.
+It began as a fork of the DEG Mods Blossom-Relay-Server and has been retargeted
+from game mods to NIP-CHAT. See **[docs/REBLOS-MIGRATION.md](docs/REBLOS-MIGRATION.md)**
+for the design and rationale.
 
-Licensed **MIT** — anyone can run a node.
+A REBLOS node is **closed by design**: it stores events from, and accepts uploads
+from, only the members of the hubs you whitelist. It reads each hub's member tree
+itself (no per-member setup) and keeps the hub durable by syncing its events and
+blobs from the hub's own relays plus relays you control.
+
+Licensed **MIT**: anyone can run a node.
 
 ## Quick install
 
@@ -31,34 +34,37 @@ without touching your data; back up `/opt/reblos/deploy/data` and `.env`. See
 
 ## Features
 
-- **Blossom blob server** — BUD-01/02/04/05/06 GET/HEAD/upload/delete, blobs
-  addressed by SHA-256.
-- **Streaming uploads** up to 500 MB — hashed on the fly (a lying `Content-Length`
-  can't overflow), a **configurable** magic-byte type filter (default `.zip`; set
-  `upload.allowed_types` to add types or `["*"]` for any), kind-24242 auth, a
-  global concurrency cap plus one in-flight upload per npub, and a free-disk check.
-- **Mod-scoped Nostr relay** — an embedded [badger](https://github.com/dgraph-io/badger)
-  event store that accepts only mod events (current kind `31142` + legacy `30402`
-  `GameMod` before a cutoff), the mod-jam family (`31143`/`31243`/`31343`), and
-  admin moderation tags (`30985`), enforces per-event proof-of-work (NIP-13), and
-  honors author deletions (NIP-09) **persistently** so a removed mod stays gone.
-  Moderation tags apply tags to *other people's* posts, so they are writable only
-  by `relay.admin_npub` and are PoW-exempt; anyone may read them.
-- **Durability sync** — per whitelisted hub, pulls that hub's events + Blossom blobs
+- **Blossom blob server**: BUD-01/02/04/05/06 GET/HEAD/upload/delete, blobs
+  addressed by SHA-256. Uploads are **member-gated**: only the admin, a trusted
+  whitelisted key, a whitelisted hub's creator, or a member of a whitelisted hub.
+- **Streaming uploads** up to 500 MB, hashed on the fly (a lying `Content-Length`
+  can't overflow), with a **configurable** magic-byte type filter (default: text
+  plus common image/audio/video; set `upload.allowed_types` to add types or `["*"]`
+  for any), kind-24242 auth, a global concurrency cap plus one in-flight upload per
+  npub, and a free-disk check.
+- **Hub-scoped Nostr relay**: an embedded [badger](https://github.com/dgraph-io/badger)
+  event store that whitelists hubs by coordinate (`36942:<pubkey>:<dTag>`), reads
+  each hub's member tree, and accepts the NIP-CHAT kinds (hub event, messages,
+  reactions, polls, reports, join requests, and more) **only from that hub's
+  members**. Enforces an optional per-event proof-of-work (NIP-13) and honors author
+  deletions (NIP-09) **persistently** so a removed event stays gone. `extra_kinds`
+  adds non-gated kinds; `accept_all_kinds` turns it into a general-purpose relay.
+- **Durability sync**: per whitelisted hub, pulls that hub's events + Blossom blobs
   (member tree, struct, member content) from the hub's own relay hints plus a
   configurable set of general relays, member-gated, so nothing is lost on downtime.
-- **Moderation** — NIP-86 pubkey ban/allow, plus persistent **address-based
-  takedowns**: a `<kind>:<pubkey>:<d>` coordinate stays rejected even if it's later
-  re-published or re-ingested.
-- **Pluggable storage** — Cloudflare R2, self-hosted S3 (Garage / Ceph / SeaweedFS),
+  Media a member fetches is mirrored on read (its hash is content-addressed, so no
+  decryption is needed).
+- **Moderation**: NIP-86 pubkey ban/allow, plus persistent **address-based
+  takedowns**: a `<kind>:<pubkey>:<d>` coordinate stays rejected even if it is later
+  re-published or re-synced.
+- **Pluggable storage**: Cloudflare R2, self-hosted S3 (Garage / Ceph / SeaweedFS),
   or local disk. Cloud is one option, not a requirement.
-- **Download gates** — [BUD-POW](docs/specs/BUD-POW.md) (proof-of-work, anti-abuse)
-  and [BUD-Ads](docs/specs/BUD-Ads.md) (ad view, funds the operator). Both use
-  HTTP `428` and are deliberately **not** a payment flow, so payment clients fail
-  over cleanly instead of misreading them.
-- **Federation** — nodes announce their capabilities over Nostr; because blobs are
+- **Download gate**: [BUD-POW](docs/specs/BUD-POW.md), a stateless proof-of-work
+  challenge (HTTP `428`) bound to the blob + client IP + expiry, as an anti-abuse
+  floor on public downloads. Off by default; blobs from trusted keys are exempt.
+- **Federation**: nodes announce their capabilities over Nostr; because blobs are
   content-addressed, any discovered node is a drop-in source for any hash.
-- **Resilience** — an S3 circuit breaker fails fast during an outage, structured
+- **Resilience**: an S3 circuit breaker fails fast during an outage, structured
   (`slog`) logging, and a fully static single binary.
 
 ## How it works
@@ -66,9 +72,10 @@ without touching your data; back up `/opt/reblos/deploy/data` and `.env`. See
 The node wraps [khatru](https://github.com/fiatjaf/khatru) (fiatjaf's Go relay +
 Blossom framework) as a library rather than forking it. A streaming `/upload`
 handler sits in front of the relay (khatru's built-in upload buffers the whole
-file, unusable at 500 MB), and a gate middleware wraps blob `GET`/`HEAD` to
-enforce the PoW/ad challenges. Storage is abstracted behind a small `Storage`
-interface with R2/S3 and local-disk implementations.
+file, unusable at 500 MB), and a gate middleware wraps blob `GET`/`HEAD` to enforce
+the PoW challenge. A per-hub poster set, derived from each whitelisted hub's member
+tree, decides which events and uploads are accepted. Storage is abstracted behind a
+small `Storage` interface with R2/S3 and local-disk implementations.
 
 ## Quick start (Docker + Caddy)
 
@@ -77,14 +84,14 @@ HTTPS):
 
 ```sh
 cd deploy
-cp .env.example .env                 # R2/S3 credentials
-cp config.yml.example config.yml     # endpoint, public URL, admin npub
-docker compose up -d
+cp config.yml.example config.yml     # backend, public URL, admin npub
+# For R2/S3 only, put credentials in deploy/.env
+#   R2_ACCESS_KEY=... / R2_SECRET_KEY=...  (or S3_ACCESS_KEY / S3_SECRET_KEY)
+docker compose up -d --build
 ```
 
-Full walkthrough — buy a server, set up storage (Cloudflare R2 **or** self-hosted
-S3), DNS, deploy, verify, and turn on gates — in the
-[deploy guide](docs/DEPLOY-GUIDE.md).
+Full walkthrough (buy a server, set up storage, DNS, deploy, verify, whitelist a
+hub, turn on the gate) is in the [deploy guide](docs/DEPLOY-GUIDE.md).
 
 ## Configuration
 
@@ -96,94 +103,71 @@ All options are documented in [`deploy/config.yml.example`](deploy/config.yml.ex
 |---|---|
 | `backend` | `r2`, `s3`, or `disk` |
 | `r2` / `s3` / `disk` | the selected backend's settings |
-| `upload` | size cap, concurrency, min free disk, optional NIP-13 PoW |
-| `relay` | admin npub (NIP-86 + moderation tags), min event PoW, kind allowlist |
-| `download` | PoW difficulty, ad gate, trusted client-IP header |
+| `upload` | size cap, concurrency, min free disk, optional NIP-13 PoW, allowed types |
+| `relay` | admin npub (NIP-86 + dashboard), min event PoW, `extra_kinds`, `accept_all_kinds` |
+| `download` | PoW difficulty, challenge TTL, trusted client-IP header |
 | `sync` | durability sync: refresh interval + extra relays to pull hub events/blobs from |
-| `ads` | relays the node publishes its BUD-Ads inventory to |
 | `announce` | Nostr capability announcement for federation (on by default, weekly) |
 | `log` | level + `text`/`json` format |
 
 On first run the node generates its identity and prints its `npub`; the `nsec` is
-saved to `data/identity.key` (used to sign the node's ad inventory and its
-federation announcement).
+saved to `data/identity.key` (used to sign the node's federation announcement). Back
+it up.
 
-## Forking this node
+## Running your node
 
-Everything below works untouched, which is exactly why it gets missed. Two
-settings decide who controls your relay and what it's for.
+Two settings decide who controls your relay and what it accepts.
 
-### The admin key — read this one
+### The admin key
 
 ```yaml
 relay:
   admin_npub: "npub1youradminkey"
 ```
 
-This npub holds **two** powers on your node:
+This npub is the only key allowed to use the **NIP-86 management API** and the
+**admin dashboard** (whitelist hubs, ban/allow pubkeys, manage sync relays, take
+down addresses). **Put your own npub here.** Leaving it empty is safe but closes the
+admin surface to everyone, including you, so you cannot whitelist any hubs.
 
-1. The NIP-86 management API — banning and unbanning pubkeys.
-2. The only key allowed to publish **moderation tags** (kind `30985`), which
-   apply tags like `content-warning` to *other people's* posts. Clients that
-   trust your relay render those tags as if the author had set them.
+### What the relay accepts
 
-Leave DEG Mods' npub here and DEG Mods can moderate your relay. Nothing breaks
-and nothing warns you. **Put your own npub in.**
+By default this is a **NIP-CHAT, hub-scoped** relay. It stores and serves the
+NIP-CHAT kinds (hub event `36942`, messages, reactions, polls, reports, join
+requests, and the rest) **only for hubs you have whitelisted**, and **only from
+those hubs' members** (derived from each hub's member tree). Everything else is
+rejected on write and on read.
 
-Leaving it empty is safe but disables both: no management API, and moderation
-tags are refused from everyone including you.
-
-> Client-side counterpart: the DEG Mods **client** has its own `ADMIN_PUBKEY` in
-> `src/lib/constants.ts`, and it decides whose moderation tags to *honour*. The
-> relay decides whose it will *store*. If those two keys differ, your client will
-> ignore tags your relay accepted (or want tags it refuses to store). Keep them
-> the same key unless you have a reason not to.
-
-### Accepting any kind
-
-By default this is a **mod-scoped** relay: it stores and serves mod events
-(`31142`, legacy `30402`), the mod-jam family (`31143`/`31243`/`31343`), and
-moderation tags (`30985`). Everything else is rejected on write *and* on read.
-
-For a general-purpose relay:
+- `relay.extra_kinds` accepts additional kinds beyond the NIP-CHAT set. These are
+  **not** member-gated; they pass the kind allowlist and `min_event_pow` only (e.g.
+  `[1059]` for gift-wrapped DMs).
+- `relay.accept_all_kinds: true` drops the kind allowlist **and** the member gate:
+  any kind, from anyone, for a general-purpose relay. Banned pubkeys, address
+  takedowns, and honored NIP-09 deletions still apply. **Set `min_event_pow` when
+  you do this**, since with the scope gone proof-of-work is the only remaining floor.
 
 ```yaml
 relay:
   accept_all_kinds: true
-  min_event_pow: 20        # strongly recommended when you do this
+  min_event_pow: 20        # strongly recommended when you open it up
 ```
 
-That drops the allowlist entirely — any kind, from anyone, including kind `30985`
-from anyone. What still applies: banned pubkeys, event takedowns, and honored
-NIP-09 deletions. What stops applying is the thing that was doing most of the
-work: a relay that only accepts mod events simply isn't a useful target for
-general spam. **Set `min_event_pow` when you open it up** — with the scope gone,
-proof-of-work is the only floor left. Deletions stay PoW-exempt, so a takedown
-never needs mining.
+## Download gate
 
-The federation announcement still advertises the mod kinds, so an open fork will
-be discovered as a mod node until you adjust `AcceptedModKinds()` in
-[`internal/server/relay.go`](internal/server/relay.go).
+The gate is off by default. When enabled, an ungated blob `GET` gets a `428` with an
+`X-Blossom-Gate-Pow` challenge; the client mines it and retries with the proof
+header.
 
-## Download gates
-
-Gates are off by default. When enabled, an ungated blob request gets a `428` with
-one `X-Blossom-Gate-*` challenge per unmet gate; the client satisfies them (mines
-the PoW, shows the ad) and retries with the matching proof headers.
-
-- **PoW** ([BUD-POW](docs/specs/BUD-POW.md)) is the enforceable anti-abuse gate:
-  a stateless HMAC challenge bound to the blob + client IP + expiry.
-- **Ads** ([BUD-Ads](docs/specs/BUD-Ads.md)) is a cooperative funding gate. The ad
-  inventory is the operator's own NIP-78 event (`kind 30078`, `d=manual-blossom-ads`).
-  Impression/view/click metrics are aggregate-only with ephemeral, salted in-window
-  dedup — **no raw IPs are stored** — and advertisers reconcile against their own
-  analytics (there is no central authority).
+- **PoW** ([BUD-POW](docs/specs/BUD-POW.md)) is a stateless HMAC challenge bound to
+  the blob + client IP + expiry, as an anti-abuse floor on public downloads.
+- Blobs uploaded by a trusted (whitelisted) key are **exempt**, so a shared link to
+  one stays directly downloadable. A `HEAD` existence check is never gated.
 
 ## Storage & retention
 
-Blobs are keyed `<sha256>.<ext>`. Mod files are meant to **persist** — there is no
+Blobs are keyed `<sha256>.<ext>`. Hub files are meant to **persist**: there is no
 automatic pruning or expiry. Deletion is manual only: the authenticated Blossom
-`DELETE /<hash>` path and the NIP-86 admin ban/allow API.
+`DELETE /<hash>` path (multi-owner, last-owner-out) and the admin API.
 
 ## Admin API
 
@@ -191,45 +175,50 @@ Management endpoints authenticated with **NIP-98** (a kind-27235 event signed by
 `relay.admin_npub`), so an admin signs each request in the browser (NIP-07) with no
 raw key on the server. All require `Authorization: Nostr <base64(event)>`.
 
-- `GET /admin/blobs?search=&page=&per=` — list stored blobs (hash, ext, size, url),
+- `GET|POST|DELETE /admin/hubs`: the hub whitelist. List hubs (with member count +
+  epoch), add one by `naddr` or `36942:<pubkey>:<dTag>` coordinate, remove one.
+- `GET|POST|PUT|DELETE /admin/sync-relays`: the durability sync-relay list. List,
+  add a custom relay, toggle one on/off, remove one (a default is disabled, a custom
+  is deleted).
+- `GET /admin/blobs?search=&page=&per=`: list stored blobs (hash, ext, size, url),
   filtered by a hash substring, numbered pagination (cached 30s).
-- `GET /admin/whitelist` — the upload-size whitelist + the normal/5× caps.
-- `POST /admin/whitelist` `{ "pubkey", "note?" }` — grant a pubkey the **5× upload
-  cap** (accepts npub or hex).
-- `DELETE /admin/whitelist` `{ "pubkey" }` — revoke it.
-- `GET|POST|DELETE /admin/banned-events` — persistent, **address-based** event
-  takedowns. A `<kind>:<pubkey>:<d>` coordinate stays rejected even if the mod is
-  later re-published or re-ingested from another relay.
-- `GET|PUT /admin/ads` — read/replace the BUD-Ads inventory. The node signs the
-  NIP-78 event (`30078:<node-pubkey>:manual-blossom-ads`) with **its own** key and
-  publishes it (so an admin can't sign it via NIP-07), then serves it from here.
-- `DELETE /<hash>` — remove a blob (admin-signed kind-24242 `t=delete`).
+- `GET /admin/whitelist`: the upload-size whitelist + the normal/5× caps.
+- `POST /admin/whitelist` `{ "pubkey", "note?" }`: grant a pubkey the **5× upload
+  cap** and gate exemption (accepts npub or hex). `DELETE` revokes it.
+- `GET|POST|DELETE /admin/banned-events`: persistent, **address-based** event
+  takedowns. A `<kind>:<pubkey>:<d>` coordinate stays rejected even if it is later
+  re-published or re-synced from another relay.
+- `GET|POST|DELETE /admin/blacklist` and `DELETE /admin/quarantine`: bar a blob hash
+  from upload/download, or release a reversibly-quarantined blob.
+- `DELETE /<hash>`: remove a blob (admin-signed kind-24242 `t=delete`).
 
 Pubkey **bans** use the relay's NIP-86 API and are unified: a banned key can neither
-post mod events nor upload blobs.
+post hub events nor upload blobs.
 
 ## Build & run from source
 
 Requires Go 1.25+.
 
 ```sh
-cp deploy/config.yml.example config.yml   # edit; set backend + endpoint
-go run ./cmd/degnode -config config.yml
+cp deploy/config.yml.example config.yml   # edit; set backend + public_url + admin_npub
+go run ./cmd/reblos -config config.yml
 go test ./...                             # unit tests (no cloud needed)
 ```
 
 ## Project layout
 
 ```
-cmd/degnode        entrypoint (config load, storage factory, announce wiring)
+cmd/reblos         entrypoint (config load, storage factory, announce + sync wiring)
 internal/config    YAML config (+ env overrides for secrets)
 internal/identity  node Nostr key (generated on first run)
+internal/hub       hub whitelist, member-tree parsing, poster-set cache, blob fetcher
 internal/storage   Storage interface + backends: r2.go (R2/S3), disk.go (local), breaker.go
 internal/server    khatru relay + Blossom handler, streaming upload, PoW gate,
                    hub whitelist + poster-set gating, durability sync, moderation
 internal/announce  Nostr capability announcement (federation discovery)
-docs/              deployment guide + BUD specs
-deploy/            Docker Compose + Caddy
+dashboard/         embedded admin SPA (Hubs, Files, Relay, Sync, Whitelist, Settings)
+docs/              deploy guide + migration/design doc + BUD specs
+deploy/            Docker Compose + Caddy + installer
 ```
 
 ## License
