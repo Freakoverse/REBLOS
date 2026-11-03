@@ -22,15 +22,43 @@ type Config struct {
 	Relay     Relay    `yaml:"relay"`
 	Download  Download `yaml:"download"`
 	Announce  Announce `yaml:"announce"`
-	Ingest    Ingest   `yaml:"ingest"`
+	Sync      Sync     `yaml:"sync"`
 	Log       Log      `yaml:"log"`
 }
 
-// Ingest subscribes to other relays and stores every mod event they carry, so this
-// node becomes a comprehensive mirror/DB of all mods across the network.
-type Ingest struct {
-	Enabled bool     `yaml:"enabled"`
-	Relays  []string `yaml:"relays"` // relays to pull mod events from
+// Sync configures the durability sync layer (REBLOS-MIGRATION §6): per whitelisted
+// hub, the node pulls that hub's events + blobs from the hub's OWN declared relay
+// hints PLUS these extra relays, and stores whatever passes the (member-gated)
+// write policy. It replaces the old global "ingest" mirror.
+type Sync struct {
+	// ExtraRelays are general relays merged into every hub's sync, on top of the
+	// curated DefaultSyncRelays and each hub's own hints. They seed the persistent,
+	// operator-managed sync-relay list (sync_relays.json) on first run; after that
+	// the list is managed from the dashboard. Leave empty to use only the defaults.
+	ExtraRelays []string `yaml:"extra_relays"`
+	// IntervalMinutes is the refresh cadence (default 15, floor 1).
+	IntervalMinutes int `yaml:"interval_minutes"`
+}
+
+// DefaultSyncRelays is the curated set of general Nostr relays the node pulls hub
+// events + content from by default, in addition to each hub's own relay hints. It
+// mirrors the DEN Chat client's default list (relays that pass a write + read-back
+// health test). An operator can disable any of these or add custom relays from the
+// dashboard; the choice persists in sync_relays.json.
+var DefaultSyncRelays = []string{
+	"wss://relay.primal.net",
+	"wss://relay.damus.io",
+	"wss://nos.lol",
+	"wss://nostr.mom",
+	"wss://wheat.happytavern.co",
+	"wss://relay.snort.social",
+	"wss://nostr.bitcoiner.social",
+	"wss://relay.layer.systems",
+	"wss://nostr.oxtr.dev",
+	"wss://relay.ditto.pub",
+	"wss://relay.nostr.net",
+	"wss://offchain.pub",
+	"wss://nostr-01.yakihonne.com",
 }
 
 // Log configures structured logging.
@@ -177,6 +205,9 @@ func Load(path string) (*Config, error) {
 	}
 	if c.Announce.IntervalHours == 0 {
 		c.Announce.IntervalHours = 168 // weekly
+	}
+	if c.Sync.IntervalMinutes == 0 {
+		c.Sync.IntervalMinutes = 15
 	}
 	if c.Log.Level == "" {
 		c.Log.Level = "info"

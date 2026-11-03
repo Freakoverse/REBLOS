@@ -44,8 +44,9 @@ without touching your data; back up `/opt/reblos/deploy/data` and `.env`. See
   honors author deletions (NIP-09) **persistently** so a removed mod stays gone.
   Moderation tags apply tags to *other people's* posts, so they are writable only
   by `relay.admin_npub` and are PoW-exempt; anyone may read them.
-- **Ingest / mirror** — optionally subscribes to other relays and stores every mod
-  they carry (current + legacy), so the node becomes a complete, one-stop mod DB.
+- **Durability sync** — per whitelisted hub, pulls that hub's events + Blossom blobs
+  (member tree, struct, member content) from the hub's own relay hints plus a
+  configurable set of general relays, member-gated, so nothing is lost on downtime.
 - **Moderation** — NIP-86 pubkey ban/allow, plus persistent **address-based
   takedowns**: a `<kind>:<pubkey>:<d>` coordinate stays rejected even if it's later
   re-published or re-ingested.
@@ -98,7 +99,7 @@ All options are documented in [`deploy/config.yml.example`](deploy/config.yml.ex
 | `upload` | size cap, concurrency, min free disk, optional NIP-13 PoW |
 | `relay` | admin npub (NIP-86 + moderation tags), min event PoW, kind allowlist |
 | `download` | PoW difficulty, ad gate, trusted client-IP header |
-| `ingest` | mirror mods (current + legacy) from other relays into this node |
+| `sync` | durability sync: refresh interval + extra relays to pull hub events/blobs from |
 | `ads` | relays the node publishes its BUD-Ads inventory to |
 | `announce` | Nostr capability announcement for federation (on by default, weekly) |
 | `log` | level + `text`/`json` format |
@@ -224,8 +225,8 @@ cmd/degnode        entrypoint (config load, storage factory, announce wiring)
 internal/config    YAML config (+ env overrides for secrets)
 internal/identity  node Nostr key (generated on first run)
 internal/storage   Storage interface + backends: r2.go (R2/S3), disk.go (local), breaker.go
-internal/server    khatru relay + Blossom handler, streaming upload, PoW/ad gate,
-                   ingest/mirror, moderation (bans + address takedowns), ad inventory
+internal/server    khatru relay + Blossom handler, streaming upload, PoW gate,
+                   hub whitelist + poster-set gating, durability sync, moderation
 internal/announce  Nostr capability announcement (federation discovery)
 docs/              deployment guide + BUD specs
 deploy/            Docker Compose + Caddy

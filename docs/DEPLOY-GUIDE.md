@@ -267,7 +267,7 @@ Everything lives in `config.yml` (secrets in `.env`). The knobs you're most like
 | `upload.max_size_mb` | per-file cap (default 500) |
 | `upload.allowed_types` | accepted file types by magic bytes — `["zip"]` default; `["*"]` = any; e.g. `["zip","rar","7z"]` |
 | `download.pow_difficulty` / `ad_gate` | the download gates (§8) |
-| `ingest.relays` | relays to mirror mods from, so your node is a complete DB |
+| `sync.interval_minutes` / `extra_relays` | durability sync cadence + extra relays to pull hub events/blobs from (managed from the dashboard Sync tab) |
 | `announce.enabled` / `relays` | advertise your node for discovery (on by default, weekly) |
 
 After any config change: `docker compose up -d --force-recreate node`, then check the

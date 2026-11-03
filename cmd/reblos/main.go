@@ -54,7 +54,7 @@ func main() {
 	}
 	defer srv.Close()
 
-	// Shared context for background workers (announce + ingest).
+	// Shared context for background workers (announce + sync).
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -73,16 +73,11 @@ func main() {
 		slog.Info("announce enabled", "relays", len(cfg.Announce.Relays), "interval_hours", cfg.Announce.IntervalHours)
 	}
 
-	// Ingest: interim global mirror of accepted NIP-CHAT events from a relay set
-	// (opt-in; superseded by the per-hub sync watcher below for durability).
-	if cfg.Ingest.Enabled && len(cfg.Ingest.Relays) > 0 {
-		go srv.RunIngest(ctx, cfg.Ingest.Relays)
-		slog.Info("ingest enabled", "relays", len(cfg.Ingest.Relays))
-	}
-
-	// Per-hub sync watcher: re-pull each whitelisted hub's 36942 from its own relay
-	// hints and mirror its member tree locally, so nothing is lost on downtime.
-	go srv.RunHubRefresh(ctx, 0)
+	// Per-hub sync watcher (§6): on a timer, re-pull each whitelisted hub's 36942 +
+	// member content + blobs from the hub's own relay hints and the operator's sync
+	// relays, member-gated, so nothing is lost on downtime. First pass per hub does a
+	// deep historical back-fill; later passes catch up on recent events.
+	go srv.RunHubRefresh(ctx, time.Duration(cfg.Sync.IntervalMinutes)*time.Minute)
 
 	// Prune spent NIP-09 deletion events (their effect is persisted separately).
 	go srv.RunDeletionSweep(ctx)

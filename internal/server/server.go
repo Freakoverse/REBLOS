@@ -77,6 +77,13 @@ type Server struct {
 	// poster-set cache (in-memory, rebuilt from the member tree on each revision).
 	hubs    *hub.Registry
 	posters *hub.PosterCache
+
+	// Durability sync (§6): the operator-managed general relay list the per-hub
+	// watcher pulls from (on top of each hub's own hints), plus a once-per-process
+	// guard so the deep historical back-fill runs only on a hub's first refresh.
+	syncR      *syncRelays
+	backfillMu sync.Mutex
+	backfilled map[string]bool
 }
 
 // New builds the node's HTTP handler (streaming upload + blossom + relay).
@@ -166,6 +173,8 @@ func New(cfg *config.Config, st storage.Storage, gateSecret string) (*Server, er
 	// Hub registry + poster-set cache. The cache's build fetches the member-tree
 	// blobs local-first (our own storage) then from the hub's Blossom hints, with
 	// mandatory sha256 verification, and parses the plaintext leaf pages.
+	s.syncR = loadSyncRelays(filepath.Join(cfg.DataDir, "sync_relays.json"), config.DefaultSyncRelays, cfg.Sync.ExtraRelays)
+	s.backfilled = map[string]bool{}
 	s.hubs = hub.LoadRegistry(filepath.Join(cfg.DataDir, "hubs.json"))
 	s.posters = hub.NewPosterCache(func(ctx context.Context, indexHash string, remotes []string) (hub.PosterSet, error) {
 		// Mirror: a member-tree blob fetched from a hub's remote Blossom is stored
@@ -219,6 +228,10 @@ func New(cfg *config.Config, st storage.Storage, gateSecret string) (*Server, er
 	mux.HandleFunc("GET /admin/hubs", s.handleAdminHubsList)
 	mux.HandleFunc("POST /admin/hubs", s.handleAdminHubsAdd)
 	mux.HandleFunc("DELETE /admin/hubs", s.handleAdminHubsRemove)
+	mux.HandleFunc("GET /admin/sync-relays", s.handleAdminSyncRelaysList)
+	mux.HandleFunc("POST /admin/sync-relays", s.handleAdminSyncRelaysAdd)
+	mux.HandleFunc("PUT /admin/sync-relays", s.handleAdminSyncRelaysSet)
+	mux.HandleFunc("DELETE /admin/sync-relays", s.handleAdminSyncRelaysRemove)
 	mux.HandleFunc("OPTIONS /admin/{rest...}", func(w http.ResponseWriter, r *http.Request) {
 		setAdminCORS(w)
 		w.WriteHeader(http.StatusNoContent)

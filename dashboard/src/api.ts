@@ -294,6 +294,40 @@ export async function removeHub(coordinate: string): Promise<void> {
   if (!res.ok) throw new Error(await reason(res))
 }
 
+// ─── Sync relays (durability §6) ────────────────────────────────────
+
+export interface SyncRelay {
+  url: string
+  enabled: boolean
+  /** Part of the node's seeded default set (removing it only disables it). */
+  default?: boolean
+}
+
+export async function listSyncRelays(): Promise<SyncRelay[]> {
+  const res = await adminFetch('/admin/sync-relays', 'GET')
+  if (!res.ok) throw new Error(await reason(res))
+  return (await res.json()).relays ?? []
+}
+
+/** Add a custom sync relay (ws:// or wss://). Returns the updated list. */
+export async function addSyncRelay(url: string): Promise<SyncRelay[]> {
+  const res = await adminFetch('/admin/sync-relays', 'POST', { url })
+  if (!res.ok) throw new Error(await reason(res))
+  return (await res.json()).relays ?? []
+}
+
+/** Toggle a sync relay on or off. */
+export async function setSyncRelayEnabled(url: string, enabled: boolean): Promise<void> {
+  const res = await adminFetch('/admin/sync-relays', 'PUT', { url, enabled })
+  if (!res.ok) throw new Error(await reason(res))
+}
+
+/** Remove a sync relay (a custom one is deleted; a default is just disabled). */
+export async function removeSyncRelay(url: string): Promise<void> {
+  const res = await adminFetch('/admin/sync-relays', 'DELETE', { url })
+  if (!res.ok) throw new Error(await reason(res))
+}
+
 // ─── Node runtime stats ─────────────────────────────────────────────
 
 export interface NodeStats {
