@@ -150,8 +150,8 @@ export function SyncRelaysTab() {
                   >
                     <span
                       className={cn(
-                        'absolute top-0.5 h-4 w-4 rounded-full bg-white transition-transform',
-                        r.enabled ? 'translate-x-4' : 'translate-x-0.5',
+                        'absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform',
+                        r.enabled ? 'translate-x-4' : 'translate-x-0',
                       )}
                     />
                   </button>

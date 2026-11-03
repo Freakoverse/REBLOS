@@ -3,7 +3,7 @@
 //   - Blossom: GET/HEAD/list/delete from R2 via khatru; a streaming PUT/HEAD
 //     /upload handler sits in front of the relay (khatru's buffered upload is
 //     unusable for 500 MB files).
-//   - Relay: mod-scoped (kinds 31142 + legacy 30402), persisted in an embedded
+//   - Relay: hub-scoped (NIP-CHAT member-gated kinds), persisted in an embedded
 //     badger event store, with NIP-86 admin.
 package server
 

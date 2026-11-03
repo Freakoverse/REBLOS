@@ -74,7 +74,6 @@ export interface RelayConfig {
     accept_all_kinds: boolean
     accepted_kinds: { kind: number; label: string }[]
     min_event_pow: number
-    legacy_cutoff: number
     admin_configured: boolean
   }
   download_gate: {

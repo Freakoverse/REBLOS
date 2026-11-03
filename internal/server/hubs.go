@@ -260,6 +260,11 @@ func (s *Server) handleAdminHubsAdd(w http.ResponseWriter, r *http.Request) {
 	if ev := s.latestHubEvent(r.Context(), h.Pubkey, h.DTag); ev != nil {
 		s.reconcileHubEvent(r.Context(), ev)
 	}
+	// Kick an immediate background pull so a freshly whitelisted hub fetches its
+	// 36942 + member tree + content right away (from the hub's relay hints plus the
+	// operator's sync relays), instead of waiting for the next sync tick. Detached
+	// from the request context so it outlives this response.
+	go s.refreshHub(context.Background(), h)
 	slog.Info("hub whitelisted", "coord", h.Coordinate())
 	writeJSON(w, http.StatusOK, s.hubViewOf(h))
 }

@@ -11,11 +11,11 @@ func TestBuildEvent(t *testing.T) {
 	sk := nostr.GeneratePrivateKey()
 	pk, _ := nostr.GetPublicKey(sk)
 	node := Node{
-		URL:         "https://brs.degmods.com",
+		URL:         "https://relay.example.com",
 		Blossom:     true,
 		Relay:       true,
 		MaxUploadMB: 500,
-		Kinds:       []int{31142, 30402},
+		Kinds:       []int{36942, 36943},
 		Gates:       Gates{Pow: 20},
 		Version:     1,
 	}
@@ -45,7 +45,7 @@ func TestBuildEvent(t *testing.T) {
 	if got.URL != node.URL || got.MaxUploadMB != 500 || got.Gates.Pow != 20 {
 		t.Fatalf("content mismatch: %+v", got)
 	}
-	if len(got.Kinds) != 2 || got.Kinds[0] != 31142 {
+	if len(got.Kinds) != 2 || got.Kinds[0] != 36942 {
 		t.Fatalf("kinds mismatch: %v", got.Kinds)
 	}
 }

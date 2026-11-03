@@ -10,14 +10,22 @@ import { ConfigSection, ConfigRow } from './ConfigList'
 
 /** Kinds the relay stores, with human labels. Unknown kinds fall back to "kind N". */
 const KIND_LABELS: Record<number, string> = {
-  31142: 'Mod',
-  30402: 'Legacy mod',
-  31143: 'Mod jam',
-  31243: 'Jam ballot',
-  31343: 'Jam result',
-  30985: 'Moderation tag',
+  36942: 'Hub',
+  36943: 'Message',
+  26943: 'Message edit hint',
+  26950: 'Typing indicator',
+  36944: 'Join request',
+  36945: 'Pin list',
+  36946: 'Voice host',
+  36947: 'Voice presence',
+  36948: 'Report',
+  36949: 'Hide message',
+  1067: 'Poll',
+  1017: 'Poll vote',
+  7: 'Reaction',
 }
-const KIND_OPTIONS = Object.entries(KIND_LABELS).map(([k, label]) => ({ kind: Number(k), label }))
+// Quick-filter chips: a useful subset of the kinds above; any other kind via the custom input.
+const KIND_OPTIONS = [36942, 36943, 7, 1067, 36948, 36944].map((k) => ({ kind: k, label: KIND_LABELS[k] }))
 const kindName = (k: number) => KIND_LABELS[k] ?? `kind ${k}`
 
 type Sub = 'general' | 'settings'
@@ -362,15 +370,15 @@ function RelaySettings() {
       </div>
 
       <ConfigSection title="Relay policy">
-        <ConfigRow label="Kind allowlist" value={cfg.relay.accept_all_kinds ? 'Disabled — accepts any kind (fork mode)' : 'Mod-scoped'} />
+        <ConfigRow label="Kind allowlist" value={cfg.relay.accept_all_kinds ? 'Disabled: accepts any kind (fork mode)' : 'Hub-scoped (NIP-CHAT)'} />
         {!cfg.relay.accept_all_kinds && (
           <ConfigRow
             label="Accepted kinds"
             value={cfg.relay.accepted_kinds.map((k) => `${k.label} (${k.kind})`).join(', ')}
+            stack
           />
         )}
-        <ConfigRow label="Min event PoW" value={bits(cfg.relay.min_event_pow)} hint="NIP-13 bits required on mod events" />
-        <ConfigRow label="Legacy mods accepted before" value={formatDate(cfg.relay.legacy_cutoff)} hint="Kind 30402 (GameMod), PoW-exempt, until this cutoff" />
+        <ConfigRow label="Min event PoW" value={bits(cfg.relay.min_event_pow)} hint="NIP-13 bits required on accepted events" />
         <ConfigRow label="Admin key configured" value={cfg.relay.admin_configured ? 'Yes' : 'No'} />
       </ConfigSection>
     </div>
