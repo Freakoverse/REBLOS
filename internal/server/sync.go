@@ -1,7 +1,10 @@
 package server
 
 import (
+	"bytes"
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"time"
 
@@ -112,6 +115,47 @@ func (s *Server) mirrorHubBlobs(ctx context.Context, indexHash, structHash strin
 		}
 		_, _ = f.Fetch(ctx, h) // local hit = no-op; remote hit mirrors via the hook
 	}
+}
+
+// mirrorOnRead lazily pulls a blob that is not stored locally from the whitelisted
+// hubs' Blossom servers, verifies its sha256, classifies it, stores it, and returns
+// a reader — the media-durability half of §6.
+//
+// A hub message's attachment hashes live inside AES-encrypted content the relay
+// cannot read, so message media cannot be mirrored proactively the way the member
+// tree is. Instead it is mirrored the first time a member actually fetches it: the
+// sha256 in the request URL is all that is needed (no decryption), and the fetcher
+// verifies the hash, so a wrong or tampered blob is never stored. Blacklisted and
+// quarantined hashes are already withheld by the download gate before this runs.
+// Best-effort: any failure returns an error and the GET 404s as before.
+func (s *Server) mirrorOnRead(ctx context.Context, sha256hex, ext string) (io.ReadSeekCloser, error) {
+	if !isSHA256Hex(sha256hex) {
+		return nil, fmt.Errorf("not a blob hash")
+	}
+	remotes := s.hubBlossomUnion(ctx)
+	if len(remotes) == 0 {
+		return nil, fmt.Errorf("no hub Blossom servers to mirror from")
+	}
+	// Bound by the configured upload ceiling (0 => the fetcher's own default); the
+	// blob is buffered in memory once, then written to storage.
+	max := s.maxUploadBytes
+	f := &hub.Fetcher{Remotes: remotes, MaxBytes: max}
+	text, err := f.Fetch(ctx, sha256hex) // sha256-verified against the request hash
+	if err != nil {
+		return nil, err
+	}
+	b := []byte(text)
+	fext, ctype, err := s.classifyBytes(b)
+	if err != nil {
+		return nil, err // a type this server does not host
+	}
+	if err := s.storage.Store(ctx, sha256hex, fext, ctype, bytes.NewReader(b), int64(len(b))); err != nil {
+		slog.Warn("mirror-on-read store failed", "hash", sha256hex, "err", err)
+		return nil, err
+	}
+	s.invalidateBlobCache()
+	slog.Info("mirrored blob on read", "hash", sha256hex, "ext", fext, "bytes", len(b))
+	return s.storage.Load(ctx, sha256hex, fext)
 }
 
 // syncHubContent fetches the hub's member-authored events from its relays and

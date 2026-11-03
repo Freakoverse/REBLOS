@@ -160,8 +160,18 @@ func (s *Server) classifyUpload(f *os.File) (ext, ctype string, err error) {
 	}
 	buf := make([]byte, sniffLen)
 	n, _ := io.ReadFull(f, buf) // short reads (EOF/ErrUnexpectedEOF) are expected and fine
-	b := buf[:n]
+	return s.classifyBytes(buf[:n])
+}
 
+// classifyBytes is the byte-sample core of classifyUpload, shared by the streaming
+// upload path (which spools to a temp file) and the mirror-on-read fallback (which
+// already holds the blob in memory). It detects the type from magic bytes — or, on
+// no magic match, whether the sample is UTF-8 text — then enforces the allow-list.
+// Only a leading sniffLen sample is inspected; a longer input is truncated.
+func (s *Server) classifyBytes(b []byte) (ext, ctype string, err error) {
+	if len(b) > sniffLen {
+		b = b[:sniffLen]
+	}
 	ext, ctype = "", ""
 	for _, m := range uploadMagics {
 		if m.match(b) {
@@ -180,7 +190,7 @@ func (s *Server) classifyUpload(f *os.File) (ext, ctype string, err error) {
 		return "", "", fmt.Errorf("this server does not accept .%s files", ext)
 	}
 	// General-purpose bit flag at offset 6 (little-endian); bit 0 = encrypted.
-	if ext == "zip" && n >= 8 && (uint16(b[6])|uint16(b[7])<<8)&0x0001 != 0 {
+	if ext == "zip" && len(b) >= 8 && (uint16(b[6])|uint16(b[7])<<8)&0x0001 != 0 {
 		return "", "", errors.New("encrypted zip archives are not accepted")
 	}
 	return ext, ctype, nil

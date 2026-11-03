@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -154,6 +155,114 @@ func TestMirrorHubBlobs(t *testing.T) {
 			t.Errorf("%s blob (%s) was not mirrored to local storage", name, h)
 		}
 	}
+}
+
+// pngBlob returns a minimal byte slice that classifyBytes detects as image/png.
+func pngBlob(payload string) []byte {
+	return append([]byte("\x89PNG\r\n\x1a\n"), []byte(payload)...)
+}
+
+// storeHubEvent whitelists a hub and stores a signed 36942 for it carrying the
+// given Blossom server hint, so hubBlossomUnion / latestHubEvent see it.
+func storeHubEvent(t *testing.T, srv *Server, dTag, blossomURL string) {
+	t.Helper()
+	sk := nostr.GeneratePrivateKey()
+	pk, _ := nostr.GetPublicKey(sk)
+	coord := "36942:" + pk + ":" + dTag
+	h, err := hub.ParseHubRef(coord)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.hubs.Add(h); err != nil {
+		t.Fatal(err)
+	}
+	ev := &nostr.Event{
+		Kind:      36942,
+		CreatedAt: nostr.Now(),
+		Tags:      nostr.Tags{{"d", dTag}, {"m", "idx", "1"}, {"o", blossomURL}},
+	}
+	if err := ev.Sign(sk); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.store.ReplaceEvent(context.Background(), ev); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A GET for a blob absent locally must be lazily pulled from a whitelisted hub's
+// Blossom server, verified, classified, stored, and served (media durability, §6).
+func TestMirrorOnRead(t *testing.T) {
+	fs := &fakeStorage{stored: map[string][]byte{}}
+	srv := testServer(t, fs)
+	ctx := context.Background()
+
+	blob := pngBlob("mirror-on-read-png-payload")
+	h := sha256hex(string(blob))
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.TrimPrefix(r.URL.Path, "/") == h {
+			_, _ = w.Write(blob)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer remote.Close()
+
+	storeHubEvent(t, srv, "mediahub", remote.URL)
+
+	rc, err := srv.mirrorOnRead(ctx, h, "png")
+	if err != nil {
+		t.Fatalf("mirrorOnRead: %v", err)
+	}
+	defer rc.Close()
+	got, _ := io.ReadAll(rc)
+	if string(got) != string(blob) {
+		t.Fatalf("served bytes != blob")
+	}
+	// Stored under the sniffed extension (png), not the member-tree default (txt).
+	if _, ok := fs.stored[h+".png"]; !ok {
+		t.Errorf("blob not stored as .png: keys=%v", keysOf(fs))
+	}
+}
+
+// With no whitelisted hubs (hence no Blossom servers), there is nothing to mirror
+// from and the miss stays a miss.
+func TestMirrorOnRead_NoHubs(t *testing.T) {
+	fs := &fakeStorage{stored: map[string][]byte{}}
+	srv := testServer(t, fs)
+	if _, err := srv.mirrorOnRead(context.Background(), sha256hex(string(pngBlob("x"))), "png"); err == nil {
+		t.Fatal("expected an error with no hub Blossom servers")
+	}
+}
+
+// A remote that serves the wrong bytes for the requested hash must not be trusted:
+// the fetcher's sha256 check fails and nothing is stored.
+func TestMirrorOnRead_HashMismatch(t *testing.T) {
+	fs := &fakeStorage{stored: map[string][]byte{}}
+	srv := testServer(t, fs)
+
+	want := sha256hex(string(pngBlob("the-real-one")))
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(pngBlob("a-different-blob")) // wrong bytes for `want`
+	}))
+	defer remote.Close()
+	storeHubEvent(t, srv, "mediahub", remote.URL)
+
+	if _, err := srv.mirrorOnRead(context.Background(), want, "png"); err == nil {
+		t.Fatal("expected a hash-mismatch error")
+	}
+	if len(fs.stored) != 0 {
+		t.Errorf("nothing should be stored on mismatch, got %v", keysOf(fs))
+	}
+}
+
+func keysOf(fs *fakeStorage) []string {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	var k []string
+	for key := range fs.stored {
+		k = append(k, key)
+	}
+	return k
 }
 
 func TestMergeRelays(t *testing.T) {

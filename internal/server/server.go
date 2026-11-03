@@ -84,14 +84,26 @@ type Server struct {
 func New(cfg *config.Config, st storage.Storage, gateSecret string) (*Server, error) {
 	relay := khatru.NewRelay()
 
+	// srv is captured by the LoadBlob closure below; it is assigned once the Server
+	// is built, well before any request is served, so the closure sees a live value.
+	var srv *Server
+
 	bl := blossom.New(relay, cfg.PublicURL)
 	bl.Store = &r2Index{st: st, publicURL: cfg.PublicURL}
 	bl.LoadBlob = append(bl.LoadBlob, func(ctx context.Context, sha256, ext string) (io.ReadSeeker, error) {
 		rc, err := st.Load(ctx, sha256, ext)
-		if err != nil {
-			return nil, err
+		if err == nil {
+			return rc, nil // *minio.Object is also an io.Closer; khatru closes ReadSeekers that implement it
 		}
-		return rc, nil // *minio.Object is also an io.Closer; khatru closes ReadSeekers that implement it
+		// Local miss: lazily mirror the blob from the whitelisted hubs' Blossom
+		// servers (media durability, §6), then serve it. Falls back to the original
+		// not-found error when there is nothing to mirror from or the pull fails.
+		if srv != nil {
+			if mrc, mErr := srv.mirrorOnRead(ctx, sha256, ext); mErr == nil {
+				return mrc, nil
+			}
+		}
+		return nil, err
 	})
 	bl.DeleteBlob = append(bl.DeleteBlob, func(ctx context.Context, sha256, ext string) error {
 		return st.Delete(ctx, sha256, ext)
@@ -149,6 +161,7 @@ func New(cfg *config.Config, st storage.Storage, gateSecret string) (*Server, er
 	if len(s.allowedUploadTypes) == 0 {
 		s.allowedUploadTypes = config.DefaultUploadTypes
 	}
+	srv = s // the LoadBlob closure's mirror-on-read fallback can now reach the Server
 
 	// Hub registry + poster-set cache. The cache's build fetches the member-tree
 	// blobs local-first (our own storage) then from the hub's Blossom hints, with

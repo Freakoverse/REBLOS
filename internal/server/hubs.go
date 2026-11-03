@@ -103,6 +103,41 @@ func relayHintsOf(ev *nostr.Event) []string {
 	return out
 }
 
+// maxBlossomUnion caps how many distinct Blossom servers the mirror-on-read
+// fallback will try for one blob, bounding the fan-out when many hubs are
+// whitelisted (and the amplification if someone requests random hashes).
+const maxBlossomUnion = 24
+
+// hubBlossomUnion returns the deduped set of Blossom server URLs advertised by the
+// whitelisted hubs' current 36942 events, capped at maxBlossomUnion. It is the
+// pool the mirror-on-read fallback pulls a locally-absent blob from: a hub message
+// keeps its media on these servers, so any of them may hold the requested blob.
+func (s *Server) hubBlossomUnion(ctx context.Context) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, h := range s.hubs.List() {
+		ev := s.latestHubEvent(ctx, h.Pubkey, h.DTag)
+		if ev == nil {
+			continue
+		}
+		meta, ok := parseHubEventMeta(ev)
+		if !ok {
+			continue
+		}
+		for _, u := range meta.BlossomServers {
+			if u == "" || seen[u] {
+				continue
+			}
+			seen[u] = true
+			out = append(out, u)
+			if len(out) >= maxBlossomUnion {
+				return out
+			}
+		}
+	}
+	return out
+}
+
 // reconcileHubEvent rebuilds a whitelisted hub's poster set from the member tree
 // referenced by this hub event. Events for hubs that are not whitelisted are
 // ignored. The cache itself no-ops when the index hash has not changed and guards
