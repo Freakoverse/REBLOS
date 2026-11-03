@@ -155,7 +155,10 @@ log:
   level: "info"
   format: "json"
 EOF
-chmod 600 "$DEPLOY/config.yml"
+# config.yml holds no secrets (those live in .env); it must be world-readable so the
+# non-root container user (uid 10001) can read the read-only bind mount, or the node
+# crash-loops on "config load failed: permission denied" and Caddy returns 502.
+chmod 644 "$DEPLOY/config.yml"
 
 : >"$DEPLOY/.env"
 chmod 600 "$DEPLOY/.env"
