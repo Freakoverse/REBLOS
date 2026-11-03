@@ -17,7 +17,7 @@ COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 # Pre-own the data dir (covers named volumes) and make the entrypoint executable.
 RUN mkdir -p /app/data && chown reblos:reblos /app/data \
 	&& chmod +x /usr/local/bin/docker-entrypoint.sh
-# Identity key, badger event store, ad metrics, and (disk backend) blobs persist here.
+# Identity key, badger event store, sync state, and (disk backend) blobs persist here.
 VOLUME ["/app/data"]
 EXPOSE 3000
 # The entrypoint fixes /app/data ownership (for bind mounts) then runs as the
