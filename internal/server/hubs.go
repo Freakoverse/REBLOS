@@ -286,7 +286,8 @@ func (s *Server) handleAdminHubsRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Coordinate string `json:"coordinate"`
+		Coordinate  string `json:"coordinate"`
+		DeleteBlobs bool   `json:"delete_blobs"` // also delete the blobs this hub solely owns
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		httpErr(w, http.StatusBadRequest, "invalid JSON")
@@ -298,6 +299,22 @@ func (s *Server) handleAdminHubsRemove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.posters.Remove(coord)
-	slog.Info("hub removed from whitelist", "coord", coord)
+
+	// Optionally delete the hub's blobs. dropHubReturningOrphans untags this hub from
+	// every blob and returns only the hashes now owned by NO whitelisted hub, so blobs
+	// shared with another hub survive. Bytes are removed explicitly, never swept.
+	deleted := 0
+	if body.DeleteBlobs {
+		for _, hash := range s.blobHubs.dropHubReturningOrphans(coord) {
+			_ = s.storage.Delete(r.Context(), hash, "")
+			s.owners.remove(hash)
+			s.quarantine.remove(hash)
+			deleted++
+		}
+		if deleted > 0 {
+			s.invalidateBlobCache()
+		}
+	}
+	slog.Info("hub removed from whitelist", "coord", coord, "blobs_deleted", deleted)
 	w.WriteHeader(http.StatusNoContent)
 }

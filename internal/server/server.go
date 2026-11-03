@@ -56,6 +56,7 @@ type Server struct {
 	bannedEv           *bannedEvents
 	deletions          *deletions         // author-initiated NIP-09 takedowns (persistent)
 	owners             *blobOwners        // hash -> uploader pubkey (persistent)
+	blobHubs           *blobHubs          // hash -> owning hub coordinates (persistent, for per-hub categorization + scoped delete)
 	refs               *blobRefs          // hash -> mods that reference it (in-memory, dashboard labelling)
 	caps               *uploadCaps        // per-upload size caps, runtime-adjustable (persistent)
 	blacklist          *blacklistedHashes // blob hashes barred from upload/download (persistent)
@@ -158,6 +159,7 @@ func New(cfg *config.Config, st storage.Storage, gateSecret string) (*Server, er
 		bannedEv:           loadBannedEvents(filepath.Join(cfg.DataDir, "banned_events.json")),
 		deletions:          loadDeletions(filepath.Join(cfg.DataDir, "deletions.json")),
 		owners:             loadBlobOwners(filepath.Join(cfg.DataDir, "blob_owners.json")),
+		blobHubs:           loadBlobHubs(filepath.Join(cfg.DataDir, "blob_hubs.json")),
 		refs:               newBlobRefs(cfg.PublicURL),
 		caps: loadUploadCaps(
 			filepath.Join(cfg.DataDir, "upload_caps.json"),

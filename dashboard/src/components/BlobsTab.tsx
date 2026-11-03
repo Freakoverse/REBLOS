@@ -5,9 +5,9 @@ import {
 } from 'lucide-react'
 import {
   listBlobs, deleteBlob, downloadBlob, addBlacklist, releaseQuarantine, formatBytes,
-  type BlobsPage, type BlobSort, type ModRef,
+  type BlobsPage, type BlobSort, type BlobHub,
 } from '../api'
-import { npubEncode, naddrEncode } from '../nostr'
+import { npubEncode } from '../nostr'
 import { cn, truncateMiddle, formatDate } from '../lib'
 import { toast } from '../toast'
 
@@ -114,7 +114,7 @@ export function BlobsTab() {
                   <SortTh label="Size" field="size" sort={sort} dir={dir} onSort={toggleSort} align="right" />
                   <SortTh label="Added" field="date" sort={sort} dir={dir} onSort={toggleSort} align="right" />
                   <th className="px-3 py-2 text-left font-medium">State</th>
-                  <th className="px-3 py-2 text-left font-medium">Mod</th>
+                  <th className="px-3 py-2 text-left font-medium">Hub</th>
                   <th className="px-3 py-2 text-right font-medium">Actions</th>
                 </tr>
               </thead>
@@ -130,8 +130,8 @@ export function BlobsTab() {
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-neutral-300">{formatBytes(b.size)}</td>
                     <td className="px-3 py-2 text-right tabular-nums text-neutral-400">{formatDate(b.added)}</td>
-                    <td className="px-3 py-2"><StateCell refs={b.refs} quarantined={b.quarantined} /></td>
-                    <td className="px-3 py-2 text-neutral-400"><ModCell refs={b.refs} /></td>
+                    <td className="px-3 py-2"><StateCell quarantined={b.quarantined} /></td>
+                    <td className="px-3 py-2 text-neutral-400"><HubCell hubs={b.hubs} /></td>
                     <td className="px-3 py-2">
                       <div className="flex items-center justify-end gap-1">
                         {b.quarantined && <ReleaseButton hash={b.hash} onReleased={load} />}
@@ -312,11 +312,11 @@ function ReleaseButton({ hash, onReleased }: { hash: string; onReleased: () => v
 }
 
 /**
- * Claimed = a mod stored on THIS relay references the blob. Unclaimed doesn't mean
- * orphaned — the mod may live on another relay — so the tooltip says "verify before
- * removing". Labelling only; nothing here deletes or gates anything.
+ * Blob state. Quarantined = withheld from download after the last uploader retracted
+ * it (reversible). Otherwise just "Stored". Which hub a blob belongs to is shown in
+ * the Hub column, not here.
  */
-function StateCell({ refs, quarantined }: { refs?: ModRef[]; quarantined?: boolean }) {
+function StateCell({ quarantined }: { quarantined?: boolean }) {
   if (quarantined) {
     return (
       <span
@@ -327,51 +327,29 @@ function StateCell({ refs, quarantined }: { refs?: ModRef[]; quarantined?: boole
       </span>
     )
   }
-  if (refs && refs.length > 0) {
-    return (
-      <span
-        className="rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-medium text-success"
-        title={`Referenced by ${refs.length} mod${refs.length > 1 ? 's' : ''} on this relay`}
-      >
-        Claimed
-      </span>
-    )
-  }
   return (
-    <span
-      className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-neutral-400"
-      title="No mod stored on this relay references this file. It may still belong to a mod hosted elsewhere — verify before removing."
-    >
-      Unclaimed
+    <span className="rounded-full bg-secondary px-2 py-0.5 text-[10px] font-medium text-neutral-400">
+      Stored
     </span>
   )
 }
 
 /**
- * The mod(s) referencing a blob. Shows the first mod's title (falling back to its
- * naddr) as a click-to-copy button that copies the naddr; "+N" marks any others,
- * with all of them listed in the hover tooltip.
+ * The whitelisted hub(s) a blob belongs to (its structural member-tree files). Shows
+ * the first hub's name (falling back to its coordinate); "+N" marks any others, with
+ * every hub listed in the hover tooltip. "—" for uncategorized blobs (e.g. message
+ * media, whose hashes live inside encrypted content).
  */
-function ModCell({ refs }: { refs?: ModRef[] }) {
-  if (!refs || refs.length === 0) return <span className="text-neutral-600">—</span>
-  const first = refs[0]
-  const naddr = naddrEncode(first.coord)
-  const label = first.title.trim() || truncateMiddle(naddr, 12, 8)
-  const rest = refs.length - 1
-  const tip = refs
-    .map((r) => {
-      const a = naddrEncode(r.coord)
-      return r.title.trim() ? `${r.title} — ${a}` : a
-    })
-    .join('\n')
+function HubCell({ hubs }: { hubs?: BlobHub[] }) {
+  if (!hubs || hubs.length === 0) return <span className="text-neutral-600" title="Not tied to a specific hub">—</span>
+  const first = hubs[0]
+  const label = first.name?.trim() || truncateMiddle(first.coord, 12, 8)
+  const rest = hubs.length - 1
+  const tip = hubs.map((h) => (h.name?.trim() ? `${h.name} — ${h.coord}` : h.coord)).join('\n')
   return (
-    <span className="inline-flex max-w-[220px] items-center gap-1">
-      <Copyable full={naddr} display={<span className="truncate">{label}</span>} className="max-w-[170px]" />
-      {rest > 0 && (
-        <span className="shrink-0 text-neutral-600" title={tip}>
-          +{rest}
-        </span>
-      )}
+    <span className="inline-flex max-w-[220px] items-center gap-1" title={tip}>
+      <span className="truncate">{label}</span>
+      {rest > 0 && <span className="shrink-0 text-neutral-600">+{rest}</span>}
     </span>
   )
 }

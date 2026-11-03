@@ -113,10 +113,13 @@ func (s *Server) mirrorHubBlobs(ctx context.Context, h *hub.Hub, indexHash, stru
 	if err != nil {
 		return
 	}
-	// Attribute each structural blob to the hub's creator (the 36942 author), who
-	// publishes the member tree + struct. This shows the owner in the Files view and
-	// marks these as claimed-by-the-hub rather than orphaned "unclaimed" blobs.
+	// Attribute each structural blob to the hub: the creator (36942 author) as its
+	// uploader, and the hub coordinate as its owner. This shows the owner + hub in the
+	// Files view (instead of orphaned "unclaimed") and lets a hub removal optionally
+	// delete only the blobs it solely owns.
+	coord := h.Coordinate()
 	s.owners.add(indexHash, h.Pubkey)
+	s.blobHubs.add(indexHash, coord)
 	hashes := hub.ParseIndex(idxText).AllBlobHashes()
 	if structHash != "" {
 		hashes = append(hashes, structHash)
@@ -127,6 +130,7 @@ func (s *Server) mirrorHubBlobs(ctx context.Context, h *hub.Hub, indexHash, stru
 		}
 		if _, err := f.Fetch(ctx, blobHash); err == nil { // local hit = no-op; remote hit mirrors via the hook
 			s.owners.add(blobHash, h.Pubkey)
+			s.blobHubs.add(blobHash, coord)
 		}
 	}
 }

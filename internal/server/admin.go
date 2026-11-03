@@ -157,15 +157,19 @@ func (s *Server) handleAdminBlobs(w http.ResponseWriter, r *http.Request) {
 	}
 	end := minInt(start+per, total)
 
+	type blobHubRef struct {
+		Coord string `json:"coord"`          // hub coordinate "36942:<pubkey>:<d>"
+		Name  string `json:"name,omitempty"` // hub display name, "" if not known yet
+	}
 	type blobDTO struct {
-		Hash        string   `json:"hash"`
-		Ext         string   `json:"ext"`
-		Size        int64    `json:"size"`
-		URL         string   `json:"url"`
-		Added       int64    `json:"added"`                 // unix seconds; 0 if unknown
-		Uploaders   []string `json:"uploaders,omitempty"`   // pubkeys, original first; empty if untracked (legacy)
-		Refs        []modRef `json:"refs,omitempty"`        // mods that reference this blob; empty = unclaimed
-		Quarantined bool     `json:"quarantined,omitempty"` // withheld from download (last uploader retracted it)
+		Hash        string       `json:"hash"`
+		Ext         string       `json:"ext"`
+		Size        int64        `json:"size"`
+		URL         string       `json:"url"`
+		Added       int64        `json:"added"`                 // unix seconds; 0 if unknown
+		Uploaders   []string     `json:"uploaders,omitempty"`   // pubkeys, original first; empty if untracked (legacy)
+		Hubs        []blobHubRef `json:"hubs,omitempty"`        // whitelisted hubs this blob belongs to; empty = uncategorized
+		Quarantined bool         `json:"quarantined,omitempty"` // withheld from download (last uploader retracted it)
 	}
 	items := make([]blobDTO, 0, end-start)
 	for _, b := range filtered[start:end] {
@@ -173,10 +177,18 @@ func (s *Server) handleAdminBlobs(w http.ResponseWriter, r *http.Request) {
 		if !b.Modified.IsZero() {
 			added = b.Modified.Unix()
 		}
+		var hubs []blobHubRef
+		for _, coord := range s.blobHubs.list(b.Hash) {
+			ref := blobHubRef{Coord: coord}
+			if h := s.hubs.Get(coord); h != nil {
+				ref.Name = h.Name
+			}
+			hubs = append(hubs, ref)
+		}
 		items = append(items, blobDTO{
 			Hash: b.Hash, Ext: b.Ext, Size: b.Size,
 			URL: s.publicURL + "/" + b.Key, Added: added, Uploaders: s.owners.list(b.Hash),
-			Refs: s.refs.refsFor(b.Hash), Quarantined: s.quarantine.has(b.Hash),
+			Hubs: hubs, Quarantined: s.quarantine.has(b.Hash),
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -244,6 +256,7 @@ func (s *Server) handleAdminBlobDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.owners.remove(hash)
+	s.blobHubs.remove(hash)
 	s.invalidateBlobCache()
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -287,6 +300,7 @@ func (s *Server) handleBlacklistAdd(w http.ResponseWriter, r *http.Request) {
 	// Purge the stored object too (best-effort — the entry is what enforces the ban).
 	_ = s.storage.Delete(r.Context(), hash, "")
 	s.owners.remove(hash)
+	s.blobHubs.remove(hash)
 	s.invalidateBlobCache()
 	w.WriteHeader(http.StatusNoContent)
 }

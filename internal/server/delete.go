@@ -69,6 +69,7 @@ func (s *Server) handleDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.owners.remove(hash)
+		s.blobHubs.remove(hash)
 		s.quarantine.remove(hash)
 		s.invalidateBlobCache()
 		slog.Info("blob deleted", "hash", hash, "admin", evt.PubKey)

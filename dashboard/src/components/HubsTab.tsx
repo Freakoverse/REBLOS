@@ -11,6 +11,7 @@ export function HubsTab() {
   const [ref, setRef] = useState('')
   const [note, setNote] = useState('')
   const [adding, setAdding] = useState(false)
+  const [removing, setRemoving] = useState<HubEntry | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -45,10 +46,11 @@ export function HubsTab() {
     }
   }
 
-  const remove = async (coordinate: string) => {
+  const remove = async (coordinate: string, deleteBlobs: boolean) => {
     try {
-      await removeHub(coordinate)
-      toast('Hub removed')
+      await removeHub(coordinate, deleteBlobs)
+      toast(deleteBlobs ? 'Hub removed and its blobs deleted' : 'Hub removed')
+      setRemoving(null)
       await load()
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Remove failed', 'error')
@@ -122,7 +124,7 @@ export function HubsTab() {
                     {h.epoch < 0 ? 'no tree yet' : `${h.members} member${h.members === 1 ? '' : 's'}`}
                   </span>
                   <button
-                    onClick={() => remove(h.coordinate)}
+                    onClick={() => setRemoving(h)}
                     title="Remove"
                     className="rounded-md p-1.5 text-neutral-500 transition-colors hover:bg-destructive/15 hover:text-destructive"
                   >
@@ -133,6 +135,83 @@ export function HubsTab() {
             ))}
           </ul>
         )}
+      </div>
+
+      {removing && (
+        <RemoveConfirm hub={removing} onClose={() => setRemoving(null)} onConfirm={remove} />
+      )}
+    </div>
+  )
+}
+
+/**
+ * Confirm removing a hub, with the choice to keep or delete its blobs. Removing from
+ * the whitelist stops the relay serving the hub's events, but its blobs stay
+ * downloadable by hash and keep using disk, so deleting them is offered. The delete
+ * removes only blobs this hub SOLELY owns (shared ones survive), and is irreversible.
+ */
+function RemoveConfirm({
+  hub,
+  onClose,
+  onConfirm,
+}: {
+  hub: HubEntry
+  onClose: () => void
+  onConfirm: (coordinate: string, deleteBlobs: boolean) => Promise<void>
+}) {
+  const [busy, setBusy] = useState<'keep' | 'delete' | null>(null)
+  const go = async (deleteBlobs: boolean) => {
+    setBusy(deleteBlobs ? 'delete' : 'keep')
+    try {
+      await onConfirm(hub.coordinate, deleteBlobs)
+    } finally {
+      setBusy(null)
+    }
+  }
+  return (
+    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 px-4" onClick={onClose}>
+      <div className="w-full max-w-sm space-y-4 rounded-xl border border-border bg-card p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-destructive/15">
+            <Trash2 className="h-4 w-4 text-destructive" />
+          </div>
+          <div className="min-w-0 space-y-1">
+            <h3 className="text-sm font-semibold text-neutral-100">Remove this hub?</h3>
+            {hub.name && <p className="truncate text-xs font-medium text-neutral-300">{hub.name}</p>}
+            <p className="break-all font-mono text-xs text-muted-foreground">{hub.d}</p>
+            <p className="text-xs text-neutral-500">
+              The relay stops accepting and serving this hub&apos;s events. Its blobs stay stored (and
+              downloadable by hash) unless you delete them. Deleting removes only blobs this hub solely
+              owns, and cannot be undone.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => go(false)}
+            disabled={busy !== null}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border px-3 py-2 text-xs font-medium text-neutral-200 hover:border-[#404040] disabled:opacity-60"
+          >
+            {busy === 'keep' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            Remove from whitelist only (keep blobs)
+          </button>
+          <button
+            onClick={() => go(true)}
+            disabled={busy !== null}
+            className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-destructive px-3 py-2 text-xs font-medium text-destructive-foreground hover:opacity-90 disabled:opacity-60"
+          >
+            {busy === 'delete' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+            Remove and delete its blobs
+          </button>
+          <button
+            onClick={onClose}
+            disabled={busy !== null}
+            className="rounded-lg px-3 py-1.5 text-xs text-neutral-400 hover:text-neutral-200 disabled:opacity-60"
+          >
+            Cancel
+          </button>
+        </div>
       </div>
     </div>
   )

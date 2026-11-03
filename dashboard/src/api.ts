@@ -9,12 +9,12 @@
  */
 import { nip98Header } from './nostr'
 
-/** A mod (or other stored event) that references a blob. */
-export interface ModRef {
-  /** Addressable coordinate "<kind>:<pubkey>:<d>", or the event id. */
+/** A whitelisted hub that owns a blob (its structural member-tree files). */
+export interface BlobHub {
+  /** Hub coordinate "36942:<pubkey>:<d>". */
   coord: string
-  /** The mod's title, or "" if it has none. */
-  title: string
+  /** Hub display name, or "" if not known yet. */
+  name?: string
 }
 export interface AdminBlob {
   hash: string
@@ -24,8 +24,8 @@ export interface AdminBlob {
   added: number
   /** Uploader pubkeys (hex), original first. Empty for blobs uploaded before tracking. */
   uploaders?: string[]
-  /** Mods that reference this blob. Empty/absent = no stored mod references it. */
-  refs?: ModRef[]
+  /** Whitelisted hubs this blob belongs to. Empty/absent = uncategorized (e.g. message media). */
+  hubs?: BlobHub[]
   /** Withheld from download — the last uploader retracted it. Reversible. */
   quarantined?: boolean
 }
@@ -289,8 +289,8 @@ export async function addHub(ref: string, note?: string): Promise<HubEntry> {
   return res.json()
 }
 
-export async function removeHub(coordinate: string): Promise<void> {
-  const res = await adminFetch('/admin/hubs', 'DELETE', { coordinate })
+export async function removeHub(coordinate: string, deleteBlobs = false): Promise<void> {
+  const res = await adminFetch('/admin/hubs', 'DELETE', { coordinate, delete_blobs: deleteBlobs })
   if (!res.ok) throw new Error(await reason(res))
 }
 
