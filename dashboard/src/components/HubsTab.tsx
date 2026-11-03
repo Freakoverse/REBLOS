@@ -108,7 +108,8 @@ export function HubsTab() {
             {hubs.map((h) => (
               <li key={h.coordinate} className="flex items-center justify-between gap-3 px-4 py-2.5">
                 <div className="min-w-0">
-                  <div className="font-mono text-xs text-neutral-300">
+                  {h.name && <div className="truncate text-sm font-medium text-neutral-100">{h.name}</div>}
+                  <div className="truncate font-mono text-xs text-neutral-400">
                     {h.d} <span className="text-muted-foreground">· {truncateMiddle(h.pubkey, 10, 8)}</span>
                   </div>
                   {h.note && <div className="truncate text-xs text-muted-foreground">{h.note}</div>}

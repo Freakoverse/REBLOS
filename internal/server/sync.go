@@ -94,7 +94,7 @@ func (s *Server) refreshHub(ctx context.Context, h *hub.Hub) {
 	//    struct) from its Blossom hints, so the full member tree survives here.
 	if cur := s.latestHubEvent(ctx, h.Pubkey, h.DTag); cur != nil {
 		if meta, ok := parseHubEventMeta(cur); ok {
-			s.mirrorHubBlobs(ctx, meta.IndexHash, meta.StructHash, meta.BlossomServers)
+			s.mirrorHubBlobs(ctx, h, meta.IndexHash, meta.StructHash, meta.BlossomServers)
 		}
 	}
 }
@@ -104,7 +104,7 @@ func (s *Server) refreshHub(ctx context.Context, h *hub.Hub) {
 // (leaf pages / tree, spine, history) plus the struct blob through a mirroring
 // fetcher, local-first, so an already-stored blob is a no-op and a missing one is
 // pulled from the hub's Blossom hints (sha256-verified) and stored.
-func (s *Server) mirrorHubBlobs(ctx context.Context, indexHash, structHash string, remotes []string) {
+func (s *Server) mirrorHubBlobs(ctx context.Context, h *hub.Hub, indexHash, structHash string, remotes []string) {
 	if indexHash == "" || len(remotes) == 0 {
 		return // nothing to pull, or nowhere to pull from
 	}
@@ -113,15 +113,21 @@ func (s *Server) mirrorHubBlobs(ctx context.Context, indexHash, structHash strin
 	if err != nil {
 		return
 	}
+	// Attribute each structural blob to the hub's creator (the 36942 author), who
+	// publishes the member tree + struct. This shows the owner in the Files view and
+	// marks these as claimed-by-the-hub rather than orphaned "unclaimed" blobs.
+	s.owners.add(indexHash, h.Pubkey)
 	hashes := hub.ParseIndex(idxText).AllBlobHashes()
 	if structHash != "" {
 		hashes = append(hashes, structHash)
 	}
-	for _, h := range hashes {
+	for _, blobHash := range hashes {
 		if ctx.Err() != nil {
 			return
 		}
-		_, _ = f.Fetch(ctx, h) // local hit = no-op; remote hit mirrors via the hook
+		if _, err := f.Fetch(ctx, blobHash); err == nil { // local hit = no-op; remote hit mirrors via the hook
+			s.owners.add(blobHash, h.Pubkey)
+		}
 	}
 }
 

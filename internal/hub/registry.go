@@ -25,6 +25,7 @@ const Kind = 36942
 type Hub struct {
 	Pubkey string   `json:"pubkey"`           // hex creator pubkey (owner real key or pseudonym O)
 	DTag   string   `json:"d"`                // hub d tag
+	Name   string   `json:"name,omitempty"`   // human-readable name from the 36942 `n` tag
 	Note   string   `json:"note,omitempty"`   // admin label
 	Relays []string `json:"relays,omitempty"` // relay hints from the naddr (for the sync layer)
 	Added  int64    `json:"added,omitempty"`  // unix seconds the admin added it
@@ -165,6 +166,20 @@ func (r *Registry) Add(h *Hub) error {
 	r.set[h.Coordinate()] = h
 	r.mu.Unlock()
 	return r.save()
+}
+
+// SetName updates a hub's display name (from its 36942 `n` tag) and persists if it
+// changed. No-op if the coordinate is unknown or the name is unchanged.
+func (r *Registry) SetName(coordinate, name string) {
+	r.mu.Lock()
+	h, ok := r.set[coordinate]
+	if !ok || h.Name == name {
+		r.mu.Unlock()
+		return
+	}
+	h.Name = name
+	r.mu.Unlock()
+	_ = r.save()
 }
 
 // Remove drops a hub by coordinate and persists. Returns whether it existed.

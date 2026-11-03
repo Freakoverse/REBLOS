@@ -18,6 +18,7 @@ import (
 // the Blossom servers to fall back to when a blob is not stored locally.
 type hubEventMeta struct {
 	DTag           string
+	Name           string   // from the `n` tag (human-readable hub name)
 	IndexHash      string   // from the `m` tag
 	Epoch          int      // from the `m` tag's third element
 	StructHash     string   // from the `struct` tag (the encrypted hub-config blob), "" if none
@@ -38,6 +39,8 @@ func parseHubEventMeta(ev *nostr.Event) (meta hubEventMeta, ok bool) {
 		switch t[0] {
 		case "d":
 			meta.DTag = t[1]
+		case "n":
+			meta.Name = t[1]
 		case "m":
 			meta.IndexHash = t[1]
 			if len(t) >= 3 {
@@ -151,6 +154,11 @@ func (s *Server) reconcileHubEvent(ctx context.Context, ev *nostr.Event) {
 	if !s.hubs.Has(coord) {
 		return
 	}
+	// Record the hub's display name so the dashboard shows it instead of the raw
+	// coordinate (the `n` tag is the only place a 36942 carries the name).
+	if meta.Name != "" {
+		s.hubs.SetName(coord, meta.Name)
+	}
 	ps, err := s.posters.Update(ctx, coord, meta.IndexHash, meta.Epoch, meta.BlossomServers)
 	if err != nil {
 		slog.Warn("hub poster-set build failed", "coord", coord, "epoch", meta.Epoch, "err", err)
@@ -198,6 +206,7 @@ type hubView struct {
 	Coordinate string   `json:"coordinate"`
 	Pubkey     string   `json:"pubkey"`
 	DTag       string   `json:"d"`
+	Name       string   `json:"name,omitempty"`
 	Note       string   `json:"note,omitempty"`
 	Relays     []string `json:"relays,omitempty"`
 	Epoch      int      `json:"epoch"`   // poster-set epoch, -1 if not built yet
@@ -206,7 +215,7 @@ type hubView struct {
 
 func (s *Server) hubViewOf(h *hub.Hub) hubView {
 	coord := h.Coordinate()
-	v := hubView{Coordinate: coord, Pubkey: h.Pubkey, DTag: h.DTag, Note: h.Note, Relays: h.Relays, Epoch: s.posters.Epoch(coord)}
+	v := hubView{Coordinate: coord, Pubkey: h.Pubkey, DTag: h.DTag, Name: h.Name, Note: h.Note, Relays: h.Relays, Epoch: s.posters.Epoch(coord)}
 	if ps, ok := s.posters.Get(coord); ok {
 		v.Members = ps.Len()
 	}

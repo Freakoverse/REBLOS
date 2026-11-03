@@ -266,6 +266,7 @@ export interface HubEntry {
   coordinate: string
   pubkey: string
   d: string
+  name?: string
   note?: string
   relays?: string[]
   /** Poster-set epoch, or -1 if the member tree has not been read yet. */

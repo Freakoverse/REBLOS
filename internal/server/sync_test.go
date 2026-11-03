@@ -148,7 +148,7 @@ func TestMirrorHubBlobs(t *testing.T) {
 	}))
 	defer remote.Close()
 
-	srv.mirrorHubBlobs(ctx, indexH, structH, []string{remote.URL})
+	srv.mirrorHubBlobs(ctx, &hub.Hub{Pubkey: key(t), DTag: "d0"}, indexH, structH, []string{remote.URL})
 
 	for name, h := range map[string]string{"index": indexH, "leaf": pageH, "spine": spineH, "history": histH, "struct": structH} {
 		if _, ok := fs.stored[h+".txt"]; !ok {
