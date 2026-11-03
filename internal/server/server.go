@@ -267,7 +267,9 @@ func New(cfg *config.Config, st storage.Storage, gateSecret string) (*Server, er
 		mux.Handle("GET /dashboard/", fileServer)
 	}
 
-	mux.Handle("/", s.gate(relay)) // BUD-POW gate on blob GET; pass-through otherwise
+	gated := s.gate(relay)                       // BUD-POW gate on blob GET; pass-through otherwise
+	mux.Handle("GET /{$}", s.rootHandler(gated)) // landing page for browsers; relay for WS + NIP-11
+	mux.Handle("/", gated)
 	s.handler = mux
 
 	return s, nil
